@@ -32,6 +32,21 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
 - La configurazione resta salvata nel browser (localStorage); le vecchie configurazioni vengono
   migrate automaticamente al nuovo formato.
 
+## Il progetto
+
+La pagina si apre sulla configurazione decisa:
+
+| | contenuto |
+|---|---|
+| Blocco 1 (fondo) | anta cerniera a sinistra, bastone appendiabiti a 113 · 111,8 cm utili |
+| Blocco 2 (centro) | anta cerniera a destra, bastone a 113 · 111,8 cm utili |
+| Blocco 3 | a vista: cassetti 40 + 20 + 20, ripiano a 80, vano aperto sopra |
+| Blocco 4 (colonna) | telaio 180 con anta: ripiani a 30 e 60, bastone a 173 · 110 cm utili · sopra telaio 40 con anta |
+
+Mobili appoggiati a terra **senza piedini**: ogni centimetro di zoccolo toglie un centimetro al
+margine dell'anta del Blocco 1, che è di 5,9 cm e sparisce a 6. Il tasto *Riparti dal progetto*
+rimette questa configurazione se nel frattempo è stata modificata nel browser.
+
 ## I quattro blocchi
 
 Numerati dal fondo verso il lato aperto, nello stesso ordine in cui si leggono da sinistra nel

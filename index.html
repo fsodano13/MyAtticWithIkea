@@ -135,6 +135,8 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
     <div class="tabs" id="tabs"></div>
     <div id="editor"></div>
     <div class="sum" id="sum"></div>
+    <div class="row" style="margin-top:16px"><button class="btn" id="bReset">Riparti dal progetto</button>
+      <span class="vano">rimette la configurazione decisa</span></div>
     <p class="foot">Misure in cm. Mobili appoggiati a terra senza piedini, profondità 55, ante FONNES spesse 1,6. Cassetti: corsa ipotizzata 50 cm. I frontali e le altezze dei cassetti vanno verificati sul sito IKEA. Il controllo usa le misure rilevate: trave sotto 154,5 a destra e 80 a sinistra, travi da 13,5 a 73,5 e 184 cm dal lato aperto.</p>
   </aside>
 </div>
@@ -181,11 +183,14 @@ const RAIL_HOOK=1.2;       // raggio del bastone: quello che la gruccia mangia i
 
 // ================= STATO =================
 const KEY='platsa_cfg_v3', KEYS_OLD=['platsa_cfg_v2','platsa_cfg_v1'];
+// il progetto deciso: due armadi appendiabiti in fondo, cassettiera al centro,
+// colonna con due ripiani bassi e il grande appendiabiti. Bastoni a 113 e 173,
+// cioè 4 cm sotto il cielo del telaio, se no il gancio della gruccia non passa.
 const DEFAULT={
-  b1:[{h:120,door:1,hinge:'L',el:[{t:'a',z:116}]}],
-  b2:[{h:120,door:1,hinge:'R',el:[{t:'r',z:40},{t:'r',z:80}]}],
-  b3:[{h:120,door:0,hinge:'R',el:[{t:'c',z:0,h:20},{t:'c',z:20,h:20},{t:'c',z:40,h:20},{t:'c',z:60,h:20},{t:'r',z:80},{t:'r',z:100}]}],
-  b4:[{h:180,door:1,hinge:'R',el:[{t:'r',z:60},{t:'r',z:120}]},{h:40,door:1,hinge:'R',el:[]}],
+  b1:[{h:120,door:1,hinge:'L',el:[{t:'a',z:113}]}],
+  b2:[{h:120,door:1,hinge:'R',el:[{t:'a',z:113}]}],
+  b3:[{h:120,door:0,hinge:'R',el:[{t:'c',z:0,h:40},{t:'c',z:40,h:20},{t:'c',z:60,h:20},{t:'r',z:80}]}],
+  b4:[{h:180,door:1,hinge:'R',el:[{t:'r',z:30},{t:'r',z:60},{t:'a',z:173}]},{h:40,door:1,hinge:'R',el:[]}],
 };
 // v1 drawers:[20,30] · v2 type:'anta'|'comp' · v3 anta e contenuto indipendenti
 function migrate(o){
@@ -374,8 +379,11 @@ function analyze(slot){
     rails(m).forEach((e,k)=>{
       const d=railDrop(m,e), [lv,txt]=railUse(d), hd=railHead(m,e);
       res.push({k:'r'+i+'_'+k, lv, msg:`Bastone a ${fmt(o.z0+e.z)} cm: ${fmt(d)} cm utili sotto, ${txt}`});
-      if(hd<RAIL_HEAD) res.push({k:'rh'+i+'_'+k, lv: hd<2.5?'bad':'warn',
-        msg:`Bastone a ${fmt(o.z0+e.z)} cm: sopra il tubo restano ${fmt(hd)} cm, il gancio della gruccia ne vuole ${RAIL_HEAD}. Abbassalo a ${fmt(o.z0+e.z-(RAIL_HEAD-hd))}`});
+      if(hd<RAIL_HEAD-0.05){                       // la tolleranza evita di segnalare un 4,0 che è 3,99999
+        const giu=Math.ceil((RAIL_HEAD-hd)*2)/2;   // di quanto abbassarlo, arrotondato al mezzo cm
+        res.push({k:'rh'+i+'_'+k, lv: hd<2.5?'bad':'warn',
+          msg:`Bastone a ${fmt(o.z0+e.z)} cm: sopra il tubo restano ${fmt(hd)} cm, il gancio della gruccia ne vuole ${RAIL_HEAD}. Abbassalo a ${fmt(o.z0+e.z-giu)}`});
+      }
     });
     const gp=gaps(m);
     if(gp.length) res.push({k:'g'+i, lv:'ok',
@@ -888,7 +896,8 @@ function drawProspetto(g,bx,base,k){
     g.text(tp.y1-4,tp.z+3.5,'elemento top SMÅSTAD ×'+tp.n,{fs:2.1,c:'#888'});
   }
   quoteH(g,-22,0,D,fmt(D)+' · profondità nicchia');
-  quoteH(g,-9,0,SLOTS[0].y0,fmt(SLOTS[0].y0));
+  const yMin=Math.min(...SLOTS.map(x=>x.y0));   // il pannello di chiusura sta fra 0 e il primo telaio
+  if(yMin>0.5) quoteH(g,-9,0,yMin,fmt(yMin));
   g.text(D,-29,'Triangolo tratteggiato: il vertice indica il lato delle cerniere. Tratteggio fine: soffitto sul filo della parete destra (x 235).',{fs:2.2,c:THIN});
   quoteV(g,-10,0,120,'120');
   quoteV(g,-18,0,under(XF),fmt(under(XF))+' intradosso trave');
@@ -1162,6 +1171,10 @@ async function savePDF(){
 }
 $('#t2d').onclick=()=>{ note('Preparo le tavole…'); setTimeout(()=>{ renderSheets(); $('#ov').hidden=false; $('#ovb').scrollTop=0; note(''); },16); };
 $('#tPdf').onclick=savePDF;
+$('#bReset').onclick=()=>{
+  if(!confirm('Rimetto la configurazione del progetto. Le modifiche fatte in questo browser vanno perse.')) return;
+  S=JSON.parse(JSON.stringify(DEFAULT)); cur='b1'; save(); syncAll(); renderAll();
+};
 $('#bClose').onclick=()=>{ $('#ov').hidden=true; };
 $('#bPdf').onclick=savePDF;
 $('#bPrint').onclick=()=>window.print();
