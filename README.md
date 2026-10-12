@@ -7,9 +7,10 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
 ## Cosa fa
 
 - **Vista 3D interattiva** (three.js) della stanza con falda, travi e soffitto reali rilevati a misura.
-- **Composizione libera dei telai**: ogni telaio PLATSA si riempie con una pila di cassetti e vani a
-  giorno in qualsiasi ordine (es. 4 cassetti da 20 più 2 vani da 20), con riordino e spazio libero
-  in cima calcolato.
+- **Anta e contenuto indipendenti**: ogni telaio PLATSA può avere o no l'anta (con il lato
+  cerniere), e separatamente si riempie con una pila di cassetti e vani in qualsiasi ordine
+  (es. 4 cassetti da 20 più 2 vani da 20). I ripiani nascono dalle divisioni fra i vani, anche
+  dietro un'anta, e la quota di ognuno viene calcolata e riportata nei disegni.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.

@@ -70,6 +70,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
 .ib:hover{color:var(--fg);border-color:var(--accent)}
 .ib[disabled]{opacity:.3;cursor:default}
 .ib.x:hover{color:var(--bad);border-color:var(--bad)}
+.hr{height:1px;background:var(--line);margin:2px 0}
 .fill{height:7px;border-radius:4px;background:var(--soft);display:flex;overflow:hidden;margin:2px 0}
 .fill i{display:block;height:100%}
 .fill i.c{background:var(--accent)}
@@ -174,29 +175,31 @@ const H_CASS=[20,30,40];                       // altezze cassetto
 const H_VANO=[10,15,20,25,30,35,40,50,60];     // altezze vano a giorno
 
 // ================= STATO =================
-const KEY='platsa_cfg_v2', KEY1='platsa_cfg_v1';
+const KEY='platsa_cfg_v3', KEYS_OLD=['platsa_cfg_v2','platsa_cfg_v1'];
 const DEFAULT={
-  col:[{h:180,type:'anta',hinge:'R',el:[]},{h:40,type:'anta',hinge:'R',el:[]}],
-  a:[{h:120,type:'comp',hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
-  b:[{h:120,type:'anta',hinge:'R',el:[]}],
-  c:[{h:120,type:'anta',hinge:'L',el:[]}],
+  col:[{h:180,door:1,hinge:'R',el:[{t:'v',h:60},{t:'v',h:60}]},{h:40,door:1,hinge:'R',el:[]}],
+  a:[{h:120,door:0,hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
+  b:[{h:120,door:1,hinge:'R',el:[{t:'v',h:40},{t:'v',h:40}]}],
+  c:[{h:120,door:1,hinge:'L',el:[]}],
 };
-function migrate(o){ // configurazioni v1 (drawers:[20,30]) -> v2 (el:[{t,h}])
+// v1 drawers:[20,30] · v2 type:'anta'|'comp' · v3 anta e contenuto indipendenti
+function migrate(o){
   const out={};
   for(const sl of SLOTS){
-    const mods=(o&&o[sl.id])||[];
-    out[sl.id]=mods.map(m=>{
-      if(Array.isArray(m.el)) return {h:+m.h,type:m.type==='anta'?'anta':'comp',hinge:m.hinge||'R',el:m.el};
-      if(m.type==='cassetti') return {h:+m.h,type:'comp',hinge:m.hinge||'R',el:(m.drawers||[]).map(d=>({t:'c',h:+d}))};
-      if(m.type==='giorno')   return {h:+m.h,type:'comp',hinge:m.hinge||'R',el:[{t:'v',h:+m.h}]};
-      return {h:+m.h,type:'anta',hinge:m.hinge||'R',el:[]};
+    out[sl.id]=((o&&o[sl.id])||[]).map(m=>{
+      const base={h:+m.h,hinge:m.hinge||'R'};
+      if(m.door!==undefined) return {...base,door:m.door?1:0,el:(m.el||[]).map(e=>({t:e.t==='c'?'c':'v',h:+e.h}))};
+      if(Array.isArray(m.el)) return {...base,door:m.type==='anta'?1:0,el:m.el.map(e=>({t:e.t==='c'?'c':'v',h:+e.h}))};
+      if(m.type==='cassetti') return {...base,door:0,el:(m.drawers||[]).map(d=>({t:'c',h:+d}))};
+      if(m.type==='giorno')   return {...base,door:0,el:[{t:'v',h:+m.h}]};
+      return {...base,door:1,el:[]};
     });
   }
   return out;
 }
 let S=null, cur='b', openAng=0, showSof=false, showFon=true, showDes=true;
 try{
-  const raw=localStorage.getItem(KEY)||localStorage.getItem(KEY1);
+  const raw=localStorage.getItem(KEY)||KEYS_OLD.map(k=>localStorage.getItem(k)).find(Boolean);
   if(raw){ const p=JSON.parse(raw); if(p&&p.col) S=migrate(p); }
 }catch(e){}
 if(!S) S=JSON.parse(JSON.stringify(DEFAULT));
@@ -208,6 +211,13 @@ function hingeY(slot,m){ return m.hinge==='R'? slot.y0 : slot.y1; }
 function sumEl(m){ return (m.el||[]).reduce((a,e)=>a+e.h,0); }
 function freeEl(m){ return m.h-sumEl(m); }
 function topDrawer(m){ let z=0,t=null; for(const e of (m.el||[])){ z+=e.h; if(e.t==='c') t=z; } return t; }
+// un ripiano sta sotto ogni vano che non parte dal fondo del telaio, e sotto lo spazio libero in cima
+function shelfZs(m){
+  const out=[]; let z=0;
+  (m.el||[]).forEach((e,j)=>{ if(j>0&&e.t==='v') out.push(z); z+=e.h; });
+  if((m.el||[]).length && freeEl(m)>0.5) out.push(z);
+  return out;
+}
 function checkDoor(slot,m,ztop){
   const h=hingeY(slot,m), s=(m.hinge==='R')?1:-1;
   let worst={c:1e9,a:0};
@@ -252,26 +262,25 @@ function analyze(slot){
   const top=minCeil(slot)-total;
   res.push({k:'top', lv:level(top), msg: top<0?`Troppo alta: supera il soffitto di ${fmt(-top)} cm`:`Spazio sopra il mobile: ${fmt(top)} cm`});
   st.forEach((o,i)=>{
-    const m=o.m;
-    if(m.type==='anta'){
+    const m=o.m, s=sumEl(m);
+    if(m.door){
       const w=checkDoor(slot,m,o.z1), lv=level(w.c);
-      res.push({k:'m'+i, lv, msg: lv==='bad'
+      res.push({k:'d'+i, lv, msg: lv==='bad'
         ? `Anta ${m.h}: sbatte di ${fmt(-w.c)} cm, si apre fino a ${maxDoorAngle(slot,m,o.z1)}°`
         : `Anta ${m.h}: margine minimo ${fmt(w.c)} cm a ${w.a}°, apre tutta`});
-    } else {
-      const s=sumEl(m);
-      if(s>m.h){ res.push({k:'m'+i, lv:'bad', msg:`Composizione: ${s} cm di elementi in un telaio da ${m.h}`}); }
-      else {
-        const td=topDrawer(m);
-        if(td===null) res.push({k:'m'+i, lv:'ok', msg:`Solo vani a giorno: nessun ingombro in apertura`});
-        else {
-          const w=checkDrawer(slot,o.z0+td), lv=level(w);
-          res.push({k:'m'+i, lv, msg: lv==='bad'
-            ? `Cassetto più alto (a ${fmt(o.z0+td)} cm): sbatte di ${fmt(-w)} cm da aperto`
-            : `Cassetto più alto (a ${fmt(o.z0+td)} cm): margine ${fmt(w)} cm da aperto`});
-        }
-        if(m.h-s>0) res.push({k:'f'+i, lv:'ok', msg:`Spazio libero in cima al telaio: ${fmt(m.h-s)} cm`});
+    }
+    if(s>m.h) res.push({k:'c'+i, lv:'bad', msg:`Interno: ${fmt(s)} cm di elementi in un telaio da ${m.h}`});
+    else {
+      const td=topDrawer(m);
+      if(td!==null){
+        const w=checkDrawer(slot,o.z0+td), lv=level(w);
+        res.push({k:'c'+i, lv, msg: lv==='bad'
+          ? `Cassetto più alto (a ${fmt(o.z0+td)} cm): sbatte di ${fmt(-w)} cm da aperto`
+          : `Cassetto più alto (a ${fmt(o.z0+td)} cm): margine ${fmt(w)} cm da aperto`});
       }
+      const sh=shelfZs(m);
+      if(sh.length) res.push({k:'s'+i, lv:'ok', msg:`${sh.length} ripian${sh.length>1?'i':'o'} a quota ${sh.map(z=>fmt(o.z0+z)).join(', ')} cm`});
+      if(m.el.length && m.h-s>0.5) res.push({k:'f'+i, lv:'ok', msg:`Spazio libero in cima al telaio: ${fmt(m.h-s)} cm`});
     }
   });
   res.forEach(r=>{ if(r.lv==='bad') worst='bad'; else if(r.lv==='warn'&&worst!=='bad') worst='warn'; });
@@ -281,7 +290,10 @@ function analyze(slot){
 // ================= UI =================
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function modLabel(m){ return m.type==='anta' ? m.h+'A' : m.h+'·'+(m.el.filter(e=>e.t==='c').length)+'c'+(m.el.filter(e=>e.t==='v').length)+'v'; }
+function modLabel(m){
+  const c=m.el.filter(e=>e.t==='c').length, v=m.el.filter(e=>e.t==='v').length;
+  return m.h+(m.door?'A':'')+(c?'·'+c+'c':'')+(v?'·'+v+'v':'');
+}
 function renderTabs(){
   $('#tabs').innerHTML=SLOTS.map(sl=>{
     const a=analyze(sl), desc=S[sl.id].map(modLabel).join(' + ');
@@ -295,37 +307,37 @@ function modEditor(slot,m,i){
   const hSel = slot.column
     ? `<select data-act="h" data-i="${i}">${opts(sizesH,m.h)}</select>`
     : `<span class="num">120</span>`;
-  let body='';
-  if(m.type==='anta'){
-    body=`<div class="row"><label>Cerniere</label><div class="seg">
-      <button data-act="hinge" data-v="L" data-i="${i}" class="${m.hinge==='L'?'on':''}">Sinistra</button>
-      <button data-act="hinge" data-v="R" data-i="${i}" class="${m.hinge==='R'?'on':''}">Destra</button></div>
-      <span class="vano">L = perno verso il fondo · R = perno verso il lato aperto</span></div>`;
-  } else {
-    const n=m.el.length, free=freeEl(m), over=free<0;
-    const bars=m.el.map(e=>`<i class="${over?'over':e.t}" style="width:${(e.h/m.h*100).toFixed(2)}%"></i>`).join('');
-    const rows=m.el.map((e,j)=>({e,j})).reverse().map(({e,j})=>`<div class="el">
-        <span class="n">${j+1}</span>
-        <select data-act="etype" data-i="${i}" data-j="${j}"><option value="c" ${e.t==='c'?'selected':''}>Cassetto</option><option value="v" ${e.t==='v'?'selected':''}>Vano</option></select>
-        <select data-act="eh" data-i="${i}" data-j="${j}">${opts(e.t==='c'?H_CASS:H_VANO,e.h)}</select>
-        <span class="vano num">${fmt(cumEl(m,j))}→${fmt(cumEl(m,j)+e.h)}</span>
-        <span class="gro">
-          <button class="ib" data-act="eup" data-i="${i}" data-j="${j}" ${j===n-1?'disabled':''} aria-label="Sposta su">↑</button>
-          <button class="ib" data-act="edn" data-i="${i}" data-j="${j}" ${j===0?'disabled':''} aria-label="Sposta giù">↓</button>
-          <button class="ib x" data-act="edel" data-i="${i}" data-j="${j}" aria-label="Togli">✕</button>
-        </span></div>`).join('');
-    body=`<div class="fill">${bars}</div>
-      <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`} · ordine dal basso verso l'alto</div>
-      <div class="stack">${rows||'<span class="vano">Telaio vuoto: aggiungi cassetti o vani.</span>'}</div>
-      <div class="row">
-        <button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>
-        <button class="btn" data-act="addv" data-i="${i}" ${free<10?'disabled':''}>+ Vano</button>
-        ${free>=10?`<button class="btn" data-act="fillv" data-i="${i}">Riempi con un vano da ${fmt(free)}</button>`:''}
-      </div>`;
-  }
+  const n=m.el.length, free=freeEl(m), over=free<0, sh=shelfZs(m);
+  const bars=m.el.map(e=>`<i class="${over?'over':e.t}" style="width:${(e.h/m.h*100).toFixed(2)}%"></i>`).join('');
+  const rows=m.el.map((e,j)=>({e,j})).reverse().map(({e,j})=>`<div class="el">
+      <span class="n">${j+1}</span>
+      <select data-act="etype" data-i="${i}" data-j="${j}"><option value="c" ${e.t==='c'?'selected':''}>Cassetto</option><option value="v" ${e.t==='v'?'selected':''}>Vano</option></select>
+      <select data-act="eh" data-i="${i}" data-j="${j}">${opts(e.t==='c'?H_CASS:H_VANO,e.h)}</select>
+      <span class="vano num">${fmt(cumEl(m,j))}→${fmt(cumEl(m,j)+e.h)}</span>
+      <span class="gro">
+        <button class="ib" data-act="eup" data-i="${i}" data-j="${j}" ${j===n-1?'disabled':''} aria-label="Sposta su">↑</button>
+        <button class="ib" data-act="edn" data-i="${i}" data-j="${j}" ${j===0?'disabled':''} aria-label="Sposta giù">↓</button>
+        <button class="ib x" data-act="edel" data-i="${i}" data-j="${j}" aria-label="Togli">✕</button>
+      </span></div>`).join('');
+  const body=`<div class="row"><label>Anta</label><div class="seg">
+      <button data-act="door" data-v="1" data-i="${i}" class="${m.door?'on':''}">Con anta</button>
+      <button data-act="door" data-v="0" data-i="${i}" class="${m.door?'':'on'}">Senza</button></div>
+      ${m.door?`<div class="seg">
+        <button data-act="hinge" data-v="L" data-i="${i}" class="${m.hinge==='L'?'on':''}">Cerniere sinistra</button>
+        <button data-act="hinge" data-v="R" data-i="${i}" class="${m.hinge==='R'?'on':''}">Destra</button></div>`:''}</div>
+    ${m.door?`<div class="vano">L = perno verso il fondo · R = perno verso il lato aperto</div>`:''}
+    <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta':'a vista'}</span></div>
+    <div class="fill">${bars}</div>
+    <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}</div>
+    <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
+    <div class="row">
+      <button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>
+      <button class="btn" data-act="addv" data-i="${i}" ${free<10?'disabled':''}>+ Vano</button>
+      ${free>=10?`<button class="btn" data-act="fillv" data-i="${i}">Riempi con un vano da ${fmt(free)}</button>`:''}
+      ${n?`<button class="btn x" data-act="eclear" data-i="${i}">Svuota</button>`:''}
+    </div>`;
   return `<div class="mod"><div class="modhead"><b>${slot.column?`Modulo ${i+1} (dal basso) · h `:'Telaio Platsa h '}${hSel}</b>
       ${slot.column&&S[slot.id].length>1?`<button class="btn x" data-act="mdel" data-i="${i}">Togli modulo</button>`:''}</div>
-    <div class="seg">${[['anta','Anta'],['comp','Cassetti e vani']].map(([t,l])=>`<button data-act="type" data-v="${t}" data-i="${i}" class="${m.type===t?'on':''}">${l}</button>`).join('')}</div>
     ${body}</div>`;
 }
 function cumEl(m,j){ let z=0; for(let k=0;k<j;k++) z+=m.el[k].h; return z; }
@@ -343,10 +355,7 @@ function renderEditor(){
 }
 function act(slot,el){
   const mods=S[slot.id], i=+el.dataset.i, j=+el.dataset.j, m=mods[i], a=el.dataset.act;
-  if(a==='type'){
-    m.type=el.dataset.v;
-    if(m.type==='comp'&&!m.el.length) m.el = m.h>=90?[{t:'c',h:30},{t:'c',h:30},{t:'c',h:30}]:[{t:'v',h:m.h}];
-  }
+  if(a==='door') m.door=+el.dataset.v;
   if(a==='hinge') m.hinge=el.dataset.v;
   if(a==='h'){ m.h=+el.value; while(m.el.length&&sumEl(m)>m.h) m.el.pop(); }
   if(a==='etype'){ m.el[j].t=el.value; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
@@ -357,22 +366,19 @@ function act(slot,el){
   if(a==='addc') m.el.push({t:'c',h:20});
   if(a==='addv') m.el.push({t:'v',h:Math.max(10,Math.min(20,freeEl(m)))});
   if(a==='fillv') m.el.push({t:'v',h:freeEl(m)});
+  if(a==='eclear') m.el=[];
   if(a==='mdel') mods.splice(i,1);
-  if(a==='madd') mods.push({h:40,type:'anta',hinge:'R',el:[]});
+  if(a==='madd') mods.push({h:40,door:1,hinge:'R',el:[]});
   save(); renderAll();
 }
 function bom(){
   const telai={}, ante={}, cass={}, vani={}; let ripiani=0, liberi=0;
   SLOTS.forEach(sl=>S[sl.id].forEach(m=>{
     telai[m.h]=(telai[m.h]||0)+1;
-    if(m.type==='anta') ante[m.h]=(ante[m.h]||0)+1;
-    else{
-      m.el.forEach((e,j)=>{
-        if(e.t==='c') cass[e.h]=(cass[e.h]||0)+1;
-        else{ vani[e.h]=(vani[e.h]||0)+1; if(j>0) ripiani++; }
-      });
-      if(freeEl(m)>0.5){ liberi++; if(m.el.length) ripiani++; }
-    }
+    if(m.door) ante[m.h]=(ante[m.h]||0)+1;
+    m.el.forEach(e=>{ if(e.t==='c') cass[e.h]=(cass[e.h]||0)+1; else vani[e.h]=(vani[e.h]||0)+1; });
+    ripiani+=shelfZs(m).length;
+    if(freeEl(m)>0.5) liberi++;
   }));
   return {telai,ante,cass,vani,ripiani,liberi};
 }
@@ -383,7 +389,6 @@ function renderSum(){
     ${li(b.telai,k=>`telaio PLATSA 60 × 55 × ${k}`)}
     ${li(b.ante,k=>`anta 60 × ${k}`)}
     ${li(b.cass,k=>`cassetto con frontale 60 × ${k}`)}
-    ${li(b.vani,k=>`vano a giorno h ${k}`)}
     ${b.ripiani?`<li>${b.ripiani} × ripiano 60 × 55</li>`:''}
     <li>1 × piano in legno 180 × 57 sopra le basse</li>
     <li>1 × pannello di chiusura 6 cm sul lato aperto</li></ul>`;
@@ -448,39 +453,38 @@ function build3D(){
   SLOTS.forEach(sl=>{
     const an=analyze(sl);
     stacks(sl).forEach((o,i)=>{
-      const m=o.m, lvl=(an.res.find(r=>r.k==='m'+i)||{}).lv;
+      const m=o.m;
+      const lvlD=(an.res.find(r=>r.k==='d'+i)||{}).lv, lvlC=(an.res.find(r=>r.k==='c'+i)||{}).lv;
       boxR(furn,XF,W,sl.y0,sl.y1,o.z0,o.z1,COLORS.carcass);
-      if(m.type==='anta'){
-        const h=hingeY(sl,m), s=(m.hinge==='R')?1:-1;
+      // interno: c'è anche dietro l'anta, solo arretrato dello spessore del frontale
+      const inset=m.door?T_FR+0.4:0, td=topDrawer(m);
+      let z=o.z0;
+      m.el.forEach(el=>{
+        if(el.h<=0) return;
+        if(el.t==='c'){
+          const isTop=(td!==null&&Math.abs(z+el.h-(o.z0+td))<0.01);
+          const col=(lvlC==='bad'&&isTop)?COLORS.bad:COLORS.front;
+          boxR(furn,XF-inset-T_FR-ext,XF-inset-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
+          if(ext>0.5) boxR(furn,XF-inset-ext,XF-inset,sl.y0+2,sl.y1-2,z+1,z+el.h-6,0xc9d6e2);
+          boxR(furn,XF-inset-T_FR-ext-1,XF-inset-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
+        } else if(!m.door){
+          boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
+        }
+        z+=el.h;
+      });
+      if(!m.door&&z<o.z1-0.5) boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.8,o.z1-0.8,COLORS.open);
+      shelfZs(m).forEach(sz=>boxR(furn,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+sz-1.8,o.z0+sz,COLORS.shelf));
+      if(m.door){
+        const h=hingeY(sl,m), sg=(m.hinge==='R')?1:-1;
         const piv=new THREE.Group(); piv.position.copy(P(XF,h,o.z0)); furn.add(piv);
         const hh=o.z1-o.z0-0.6;
         const g=new THREE.BoxGeometry(T_FR,hh,59.4);
-        const col=lvl==='bad'?COLORS.bad:(lvl==='warn'?COLORS.warn:COLORS.door);
-        const me=new THREE.Mesh(g,mat(col)); me.position.set(-T_FR/2,0.3+hh/2,-s*30); piv.add(me);
+        const col=lvlD==='bad'?COLORS.bad:(lvlD==='warn'?COLORS.warn:COLORS.door);
+        const me=new THREE.Mesh(g,mat(col)); me.position.set(-T_FR/2,0.3+hh/2,-sg*30); piv.add(me);
         const e=new THREE.LineSegments(new THREE.EdgesGeometry(g),edgeMat); e.position.copy(me.position); piv.add(e);
         const kn=new THREE.Mesh(new THREE.BoxGeometry(1.5,12,1.5),mat(COLORS.handle));
-        kn.position.set(-T_FR-0.8,0.3+Math.min(hh/2,95),-s*55); piv.add(kn);
-        piv.rotation.y=s*angR;
-      } else {
-        const td=topDrawer(m); let z=o.z0;
-        m.el.forEach((el,j)=>{
-          if(el.h<=0) return;
-          if(el.t==='c'){
-            const isTop=(td!==null && Math.abs(z+el.h-(o.z0+td))<0.01);
-            const col=(lvl==='bad'&&isTop)?COLORS.bad:COLORS.front;
-            boxR(furn,XF-T_FR-ext,XF-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
-            if(ext>0.5) boxR(furn,XF-ext,XF,sl.y0+2,sl.y1-2,z+1,z+el.h-6,0xc9d6e2);
-            boxR(furn,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
-          } else {
-            if(j>0) boxR(furn,XF,W,sl.y0+0.8,sl.y1-0.8,z-1.8,z,COLORS.shelf);
-            boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
-          }
-          z+=el.h;
-        });
-        if(z<o.z1-0.5){
-          if(m.el.length) boxR(furn,XF,W,sl.y0+0.8,sl.y1-0.8,z-1.8,z,COLORS.shelf);
-          boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.8,o.z1-0.8,COLORS.open);
-        }
+        kn.position.set(-T_FR-0.8,0.3+Math.min(hh/2,95),-sg*55); piv.add(kn);
+        piv.rotation.y=sg*angR;
       }
     });
   });
@@ -661,28 +665,31 @@ function drawProspetto(g,bx,base,k){
     stacks(sl).forEach(o=>{
       const m=o.m;
       g.rect(sl.y0,o.z0,w,m.h,{w:0.45});
-      if(m.type==='anta'){
+      const hid=!!m.door, cc=hid?'#9a9a9a':INK, dd=hid?'1.4,1.1':undefined;
+      let z=o.z0;
+      m.el.forEach(e=>{
+        if(e.h<=0) return;
+        if(e.t==='c'){
+          g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:hid?0.18:0.25,c:cc,d:dd,f:hid?null:'#f4f4f4'});
+          if(!hid) g.line(sl.y0+w/2-9,z+e.h-5,sl.y0+w/2+9,z+e.h-5,{w:0.55,c:'#555'});
+          g.text(sl.y1-3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:hid?'#999':'#333'});
+        } else if(!hid){
+          g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
+          g.text(sl.y1-3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
+        }
+        z+=e.h;
+      });
+      shelfZs(m).forEach(sz=>{
+        g.line(sl.y0,o.z0+sz,sl.y1,o.z0+sz,{w:hid?0.22:0.32,c:cc,d:dd});
+        if(hid) g.text(sl.y1-3.5,o.z0+sz+1.5,'ripiano '+fmt(o.z0+sz),{fs:2.1,c:'#999'});
+      });
+      if(!hid&&z<o.z1-0.5) g.text(sl.y1-3.5,(z+o.z1)/2-1.6,'libero '+fmt(o.z1-z),{fs:2.2,c:'#888'});
+      if(m.door){
         const uh=hingeY(sl,m), uo=(uh===sl.y0)?sl.y1:sl.y0, mid=(o.z0+o.z1)/2;
         g.line(uo,o.z0+1.5,uh,mid,{w:0.15,c:THIN,d:'1.6,1.2'});
         g.line(uo,o.z1-1.5,uh,mid,{w:0.15,c:THIN,d:'1.6,1.2'});
         g.text(sl.y0+w/2,mid+2,'anta '+m.h,{fs:2.4,an:'middle',c:'#444'});
-        g.text(sl.y0+w/2,mid-5,'cerniere '+(m.hinge==='R'?'R':'L'),{fs:2.1,an:'middle',c:THIN});
-      } else {
-        let z=o.z0;
-        m.el.forEach(e=>{
-          if(e.h<=0) return;
-          if(e.t==='c'){
-            g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.25,f:'#f4f4f4'});
-            g.line(sl.y0+w/2-9,z+e.h-5,sl.y0+w/2+9,z+e.h-5,{w:0.55,c:'#555'});
-            g.text(sl.y1-3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:'#333'});
-          } else {
-            g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
-            g.text(sl.y1-3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
-          }
-          z+=e.h;
-          if(z<o.z1-0.3) g.line(sl.y0,z,sl.y1,z,{w:0.3});
-        });
-        if(z<o.z1-0.5) g.text(sl.y1-3.5,(z+o.z1)/2-1.6,'libero '+fmt(o.z1-z),{fs:2.2,c:'#888'});
+        g.text(sl.y0+w/2,mid-5,'cerniere '+m.hinge,{fs:2.1,an:'middle',c:THIN});
       }
     });
     g.text(sl.y0+(sl.y1-sl.y0)/2,-7,sl.name,{fs:2.6,an:'middle',b:true});
@@ -713,16 +720,21 @@ function drawPianta(g,bx,base,k){
     const seen={};
     stacks(sl).forEach(o=>{
       const m=o.m;
-      if(m.type==='anta'){
-        const key='a'+m.hinge; if(seen[key]) return; seen[key]=1;
-        const uh=hingeY(sl,m), s=(m.hinge==='R')?1:-1, p=[];
-        for(let a=0;a<=90;a+=3) p.push([uh+s*60*Math.cos(a*Math.PI/180), (W-DEPTH)-60*Math.sin(a*Math.PI/180)]);
-        g.poly(p,{w:0.18,c:THIN,d:'1.5,1.2'});
-        g.line(uh,W-DEPTH,uh,W-DEPTH-60,{w:0.5,c:ACC});
-        g.line(uh,W-DEPTH,uh+s*60,W-DEPTH,{w:0.25,c:'#aaa',d:'1,1'});
-      } else if(topDrawer(m)!==null){
-        if(seen.c) return; seen.c=1;
-        g.rect(sl.y0+1,W-DEPTH-EXT-T_FR,sl.y1-sl.y0-2,EXT+T_FR,{w:0.18,c:THIN,d:'1.5,1.2'});
+      if(m.door){
+        const key='a'+m.hinge;
+        if(!seen[key]){
+          seen[key]=1;
+          const uh=hingeY(sl,m), s=(m.hinge==='R')?1:-1, p=[];
+          for(let a=0;a<=90;a+=3) p.push([uh+s*60*Math.cos(a*Math.PI/180), (W-DEPTH)-60*Math.sin(a*Math.PI/180)]);
+          g.poly(p,{w:0.18,c:THIN,d:'1.5,1.2'});
+          g.line(uh,W-DEPTH,uh,W-DEPTH-60,{w:0.5,c:ACC});
+          g.line(uh,W-DEPTH,uh+s*60,W-DEPTH,{w:0.25,c:'#aaa',d:'1,1'});
+        }
+      }
+      if(topDrawer(m)!==null&&!seen.c){
+        seen.c=1;
+        const off=m.door?T_FR:0;
+        g.rect(sl.y0+1,W-DEPTH-off-EXT-T_FR,sl.y1-sl.y0-2,EXT+T_FR,{w:0.18,c:THIN,d:'1.5,1.2'});
         g.text(sl.y0+(sl.y1-sl.y0)/2,W-DEPTH-EXT+2,'cassetti '+EXT,{fs:2.1,an:'middle',c:THIN});
       }
     });
@@ -752,15 +764,16 @@ function drawSezione(g,sl,bx,base,k){
   stacks(sl).forEach(o=>{
     const m=o.m; tot=Math.max(tot,o.z1);
     g.rect(XF,o.z0,DEPTH,m.h,{w:0.45,f:'#f2f2f2'});
-    if(m.type==='anta'){
+    shelfZs(m).forEach(sz=>g.line(XF,o.z0+sz,W,o.z0+sz,{w:0.25,c:'#888'}));
+    const td=topDrawer(m);
+    if(td!==null){
+      const off=m.door?T_FR:0;
+      g.rect(XF-off-T_FR-EXT,o.z0,EXT+T_FR,td,{w:0.2,c:THIN,d:'1.5,1.2'});
+      g.text(XF-EXT,o.z0+td-7,'cassetti aperti',{fs:2.1,c:THIN});
+    }
+    if(m.door){
       g.rect(XF-60,o.z0,60,m.h,{w:0.25,c:ACC,d:'1.5,1.2'});
       g.text(XF-58,o.z1-7,'anta a 90°',{fs:2.1,c:ACC});
-    } else {
-      const td=topDrawer(m);
-      if(td!==null){
-        g.rect(XF-T_FR-EXT,o.z0,EXT+T_FR,td,{w:0.2,c:THIN,d:'1.5,1.2'});
-        g.text(XF-EXT,o.z0+td-7,'cassetti aperti',{fs:2.1,c:THIN});
-      }
     }
   });
   quoteV(g,96,0,tot,fmt(tot),3);
@@ -788,14 +801,16 @@ function colText(g,x,yTop,lines,fs,lead,maxCh){
 }
 const DOTC={ok:'#2e7d4f',warn:'#9a6a00',bad:'#b3261e'};
 function modDesc(m,short){
-  if(m.type==='anta') return 'telaio '+m.h+' · anta, cerniere '+(m.hinge==='R'
+  const q=[];
+  if(m.door) q.push('anta, cerniere '+(m.hinge==='R'
     ? (short?'a destra':'a destra (verso il lato aperto)')
-    : (short?'a sinistra':'a sinistra (verso il fondo)'));
-  const c=m.el.filter(e=>e.t==='c'), v=m.el.filter(e=>e.t==='v'), q=[];
+    : (short?'a sinistra':'a sinistra (verso il fondo)')));
+  const c=m.el.filter(e=>e.t==='c'), v=m.el.filter(e=>e.t==='v'), sh=shelfZs(m);
   if(c.length) q.push(c.length+(c.length>1?' cassetti ':' cassetto ')+c.map(e=>e.h).join('+'));
-  if(v.length) q.push(v.length+(v.length>1?' vani ':' vano ')+v.map(e=>e.h).join('+'));
+  if(sh.length) q.push(sh.length+(sh.length>1?' ripiani a ':' ripiano a ')+sh.map(fmt).join(', '));
+  else if(v.length) q.push(v.length+(v.length>1?' vani ':' vano ')+v.map(e=>e.h).join('+'));
   const f=freeEl(m);
-  return 'telaio '+m.h+' · '+(q.join(' + ')||'vuoto')+(f>0.5?' · libero '+fmt(f):'');
+  return 'telaio '+m.h+' · '+(q.join(' · ')||'vuoto, nessun frontale')+(!short&&m.el.length&&f>0.5?' · libero in cima '+fmt(f):'');
 }
 function bomLines(){
   const b=bom(), L=[];
@@ -804,8 +819,8 @@ function bomLines(){
   L.push({t:' '}); L.push({t:'Frontali',b:true});
   add(b.ante,k=>'anta 60 × '+k); add(b.cass,k=>'cassetto con frontale 60 × '+k);
   L.push({t:' '}); L.push({t:'Interni',b:true});
-  add(b.vani,k=>'vano a giorno h '+k);
   if(b.ripiani) L.push({t:b.ripiani+' × ripiano 60 × 55'});
+  else L.push({t:'nessun ripiano',c:'#888'});
   L.push({t:' '}); L.push({t:'Su misura',b:true});
   L.push({t:'1 × piano in legno 180 × 57 sopra le basse'});
   L.push({t:'1 × pannello di chiusura 6 cm sul lato aperto'});
@@ -864,11 +879,9 @@ function pageListe(g,n,tot){
     stacks(sl).forEach(o=>{
       const m=o.m;
       C.push({t:modDesc(m)+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
-      if(m.type!=='anta'){
-        let z=o.z0;
-        m.el.forEach((e,j)=>{ C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h),c:'#555'}); z+=e.h; });
-        if(o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
-      }
+      let z=o.z0;
+      m.el.forEach((e,j)=>{ C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h),c:'#555'}); z+=e.h; });
+      if(m.el.length&&o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
     });
     C.push({t:' '});
   });
