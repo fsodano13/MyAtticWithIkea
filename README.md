@@ -15,7 +15,10 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
   attivabile su ogni vano: il tool calcola l'altezza utile sotto il bastone e dice se ci stanno
   capi lunghi, camicie e giacche, o niente.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
-  apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
+  apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto, e cassetti
+  interni bloccati da un'anta che non arriva a 90°.
+- **Cassetti interni**: dietro un'anta il cassetto va senza frontale (HJÄLPA 60 × 55 nudo), e la
+  distinta lo tiene distinto dal cassetto con frontale dei vani a vista.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
 - **Apertura per singolo telaio**: ogni anta e ogni cassettiera ha il suo cursore 0–90°, e nel 3D
   basta toccare un'anta o un cassetto per aprirlo. L'apertura è stato di vista, non viene salvata

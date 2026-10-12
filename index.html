@@ -287,6 +287,11 @@ function analyze(slot){
         ? `Anta ${m.h}: sbatte di ${fmt(-w.c)} cm, si apre fino a ${maxDoorAngle(slot,m,o.z1)}°`
         : `Anta ${m.h}: margine minimo ${fmt(w.c)} cm a ${w.a}°, apre tutta`});
     }
+    if(m.door&&topDrawer(m)!==null){
+      const ma=maxDoorAngle(slot,m,o.z1);
+      if(ma<88) res.push({k:'x'+i, lv:'bad',
+        msg:`Cassetti interni bloccati: l'anta si ferma a ${ma}° e resta davanti al cassetto, che per uscire ha bisogno dell'anta a 90°`});
+    }
     if(s>m.h) res.push({k:'c'+i, lv:'bad', msg:`Interno: ${fmt(s)} cm di elementi in un telaio da ${m.h}`});
     else {
       const td=topDrawer(m);
@@ -349,7 +354,7 @@ function modEditor(slot,m,i){
         <button data-act="hinge" data-v="L" data-i="${i}" class="${m.hinge==='L'?'on':''}">Cerniere sinistra</button>
         <button data-act="hinge" data-v="R" data-i="${i}" class="${m.hinge==='R'?'on':''}">Destra</button></div>`:''}</div>
     ${m.door?`<div class="vano">L = perno verso il fondo · R = perno verso il lato aperto</div>`:''}
-    <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta':'a vista'}</span></div>
+    <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta: i cassetti vanno senza frontale':'a vista'}</span></div>
     <div class="fill">${bars}</div>
     <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
     <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
@@ -411,16 +416,19 @@ function act(slot,el){
   save(); renderAll();
 }
 function bom(){
-  const telai={}, ante={}, cass={}, vani={}; let ripiani=0, liberi=0, aste=0;
+  const telai={}, ante={}, cass={}, cassIn={}, vani={}; let ripiani=0, liberi=0, aste=0;
   SLOTS.forEach(sl=>S[sl.id].forEach(m=>{
     telai[m.h]=(telai[m.h]||0)+1;
     if(m.door) ante[m.h]=(ante[m.h]||0)+1;
-    m.el.forEach(e=>{ if(e.t==='c') cass[e.h]=(cass[e.h]||0)+1; else vani[e.h]=(vani[e.h]||0)+1; });
+    m.el.forEach(e=>{
+      if(e.t!=='c') { vani[e.h]=(vani[e.h]||0)+1; return; }
+      if(m.door) cassIn[e.h]=(cassIn[e.h]||0)+1; else cass[e.h]=(cass[e.h]||0)+1;
+    });
     ripiani+=shelfZs(m).length;
     aste+=railsOf(m).length;
     if(freeEl(m)>0.5) liberi++;
   }));
-  return {telai,ante,cass,vani,ripiani,liberi,aste};
+  return {telai,ante,cass,cassIn,vani,ripiani,liberi,aste};
 }
 function renderSum(){
   const b=bom();
@@ -428,7 +436,8 @@ function renderSum(){
   $('#sum').innerHTML=`<h2>Lista componenti</h2><ul>
     ${li(b.telai,k=>`telaio PLATSA 60 × 55 × ${k}`)}
     ${li(b.ante,k=>`anta 60 × ${k}`)}
-    ${li(b.cass,k=>`cassetto con frontale 60 × ${k}`)}
+    ${li(b.cass,k=>`cassetto HJÄLPA 60 × 55 con frontale 60 × ${k}`)}
+    ${li(b.cassIn,k=>`cassetto HJÄLPA 60 × 55 interno, senza frontale (vano da ${k})`)}
     ${b.ripiani?`<li>${b.ripiani} × ripiano 60 × 55</li>`:''}
     ${b.aste?`<li>${b.aste} × bastone appendiabiti HJÄLPA regolabile 60–100 × 55</li>`:''}
     <li>1 × piano in legno 180 × 57 sopra le basse</li>
@@ -484,7 +493,7 @@ function boxR(parent,x0,x1,y0,y1,z0,z1,color){
   return me;
 }
 let furn=null;
-const COLORS={rail:0x8d98a3,carcass:0xdbe6f1,front:0xf7fbff,open:0x5d7690,handle:0x2f6ea8,door:0xf7fbff,bad:0xf28b82,warn:0xf5d07a,top:0xd2b98c,fill:0xe6e6e6,shelf:0xcfdbe8};
+const COLORS={box:0xc9d6e2,rail:0x8d98a3,carcass:0xdbe6f1,front:0xf7fbff,open:0x5d7690,handle:0x2f6ea8,door:0xf7fbff,bad:0xf28b82,warn:0xf5d07a,top:0xd2b98c,fill:0xe6e6e6,shelf:0xcfdbe8};
 function build3D(){
   if(furn) scene.remove(furn);
   furn=new THREE.Group(); scene.add(furn);
@@ -498,16 +507,19 @@ function build3D(){
       const mg=new THREE.Group(); mg.userData={sid:sl.id,mi:i}; furn.add(mg);
       boxR(mg,XF,W,sl.y0,sl.y1,o.z0,o.z1,COLORS.carcass);
       // interno: c'è anche dietro l'anta, solo arretrato dello spessore del frontale
-      const inset=m.door?T_FR+0.4:0, td=topDrawer(m);
+      const td=topDrawer(m);
       let z=o.z0;
       m.el.forEach(el=>{
         if(el.h<=0) return;
-        if(el.t==='c'){
+        if(el.t==='c'&&m.door){
+          // cassetto interno: cassa a vista, nessun frontale e nessuna maniglia
+          boxR(mg,XF+1-ext,W-2-ext,sl.y0+2,sl.y1-2,z+1,z+Math.min(el.h-4,13),COLORS.box);
+        } else if(el.t==='c'){
           const isTop=(td!==null&&Math.abs(z+el.h-(o.z0+td))<0.01);
           const col=(lvlC==='bad'&&isTop)?COLORS.bad:COLORS.front;
-          boxR(mg,XF-inset-T_FR-ext,XF-inset-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
-          if(ext>0.5) boxR(mg,XF-inset-ext,XF-inset,sl.y0+2,sl.y1-2,z+1,z+el.h-6,0xc9d6e2);
-          boxR(mg,XF-inset-T_FR-ext-1,XF-inset-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
+          boxR(mg,XF-T_FR-ext,XF-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
+          if(ext>0.5) boxR(mg,XF-ext,XF,sl.y0+2,sl.y1-2,z+1,z+el.h-6,COLORS.box);
+          boxR(mg,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
         } else if(!m.door){
           boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
         }
@@ -743,7 +755,7 @@ function drawProspetto(g,bx,base,k){
         if(e.t==='c'){
           g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:hid?0.18:0.25,c:cc,d:dd,f:hid?null:'#f4f4f4'});
           if(!hid) g.line(sl.y0+w/2-9,z+e.h-5,sl.y0+w/2+9,z+e.h-5,{w:0.55,c:'#555'});
-          g.text(sl.y1-3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:hid?'#999':'#333'});
+          g.text(sl.y1-3.5,z+e.h/2-1.6,(hid?'cassetto interno ':'cassetto ')+e.h,{fs:2.2,c:hid?'#999':'#333'});
         } else {
           if(!hid){
             g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
@@ -890,7 +902,7 @@ function modDesc(m,short){
     ? (short?'a destra':'a destra (verso il lato aperto)')
     : (short?'a sinistra':'a sinistra (verso il fondo)')));
   const c=m.el.filter(e=>e.t==='c'), v=m.el.filter(e=>e.t==='v'), sh=shelfZs(m);
-  if(c.length) q.push(c.length+(c.length>1?' cassetti ':' cassetto ')+c.map(e=>e.h).join('+'));
+  if(c.length) q.push(c.length+(c.length>1?' cassetti ':' cassetto ')+(m.door?'intern'+(c.length>1?'i ':'o '):'')+c.map(e=>e.h).join('+'));
   if(sh.length) q.push(sh.length+(sh.length>1?' ripiani a ':' ripiano a ')+sh.map(fmt).join(', '));
   else if(v.length) q.push(v.length+(v.length>1?' vani ':' vano ')+v.map(e=>e.h).join('+'));
   const rl=railsOf(m);
@@ -903,11 +915,13 @@ function bomLines(){
   const add=(o,f)=>Object.keys(o).sort((x,y)=>x-y).forEach(k=>L.push({t:o[k]+' × '+f(k)}));
   L.push({t:'Telai',b:true}); add(b.telai,k=>'PLATSA 60 × 55 × '+k);
   L.push({t:' '}); L.push({t:'Frontali',b:true});
-  add(b.ante,k=>'anta 60 × '+k); add(b.cass,k=>'cassetto con frontale 60 × '+k);
+  add(b.ante,k=>'anta 60 × '+k);
+  add(b.cass,k=>'cassetto HJÄLPA 60 × 55 con frontale 60 × '+k);
   L.push({t:' '}); L.push({t:'Interni',b:true});
+  add(b.cassIn,k=>'cassetto HJÄLPA 60 × 55 interno, senza frontale (vano da '+k+')');
   if(b.ripiani) L.push({t:b.ripiani+' × ripiano 60 × 55'});
   if(b.aste) L.push({t:b.aste+' × bastone appendiabiti HJÄLPA regolabile 60–100 × 55'});
-  if(!b.ripiani&&!b.aste) L.push({t:'nessun accessorio interno',c:'#888'});
+  if(!b.ripiani&&!b.aste&&!Object.keys(b.cassIn).length) L.push({t:'nessun accessorio interno',c:'#888'});
   L.push({t:' '}); L.push({t:'Su misura',b:true});
   L.push({t:'1 × piano in legno 180 × 57 sopra le basse'});
   L.push({t:'1 × pannello di chiusura 6 cm sul lato aperto'});
@@ -968,7 +982,7 @@ function pageListe(g,n,tot){
       C.push({t:modDesc(m)+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
       let z=o.z0;
       m.el.forEach((e,j)=>{
-        C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)+(e.rail?' · bastone a '+fmt(z+e.h-RAIL_Z):''),c:'#555'});
+        C.push({t:'  '+(j+1)+'. '+(e.t==='c'?(m.door?'cassetto interno':'cassetto'):'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)+(e.rail?' · bastone a '+fmt(z+e.h-RAIL_Z):''),c:'#555'});
         z+=e.h;
       });
       if(m.el.length&&o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
@@ -992,6 +1006,7 @@ function pageListe(g,n,tot){
     {t:'Ante FONNES spesse 1,6 cm, larghe 60, rotazione 0–90°.'},
     {t:'Corsa cassetti ipotizzata 50 cm.'},
     {t:'Bastone HJÄLPA 4 cm sotto il cielo del vano; altezza utile misurata sotto il bastone.'},
+    {t:'Dietro un\u2019anta il cassetto HJÄLPA va senza frontale, e per uscire vuole l\u2019anta a 90°.'},
     {t:'Sotto il bastone: oltre 150 cm per i capi lunghi, oltre 100 per camicie e giacche.'},
     {t:'Margine verde oltre 3 cm, giallo sotto 3 cm, rosso in interferenza.'},
     {t:' '},
