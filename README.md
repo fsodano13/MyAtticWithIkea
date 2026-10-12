@@ -11,18 +11,18 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
   cerniere), e separatamente si riempie con una pila di cassetti e vani in qualsiasi ordine
   (es. 4 cassetti da 20 più 2 vani da 20). I ripiani nascono dalle divisioni fra i vani, anche
   dietro un'anta, e la quota di ognuno viene calcolata e riportata nei disegni.
-- **Bastone appendiabiti** (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55)
-  attivabile su ogni vano: il tool calcola l'altezza utile sotto il bastone e dice se ci stanno
-  capi lunghi, camicie e giacche, o niente.
+- **Tre tipi di elemento** nella pila: cassetto, vano a giorno e vano con **bastone appendiabiti**
+  (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55). Per il bastone il tool
+  calcola l'altezza utile sotto e dice se ci stanno capi lunghi, camicie e giacche, o niente.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto, e cassetti
   interni bloccati da un'anta che non arriva a 90°.
 - **Cassetti interni**: dietro un'anta il cassetto va senza frontale (HJÄLPA 60 × 55 nudo), e la
   distinta lo tiene distinto dal cassetto con frontale dei vani a vista.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
-- **Apertura per singolo telaio**: ogni anta e ogni cassettiera ha il suo cursore 0–90°, e nel 3D
-  basta toccare un'anta o un cassetto per aprirlo. L'apertura è stato di vista, non viene salvata
-  con la configurazione.
+- **Apertura per singolo pezzo**: il cursore 0–90° sta sulla riga dell'anta, il tasto *Sfila* sulla
+  riga di ogni cassetto, e nel 3D si tocca direttamente l'anta o il singolo cassetto. L'apertura è
+  stato di vista, non viene salvata con la configurazione.
 - **Viste 2D e PDF**: il tasto *Salva PDF* produce un A4 orizzontale di quattro tavole — viste 3D
   con il riepilogo dei quattro blocchi, prospetto e pianta in 1:20, una sezione per blocco in 1:30,
   lista componenti e composizione quota per quota. Il tasto *Viste 2D* mostra le stesse tavole a

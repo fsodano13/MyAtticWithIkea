@@ -74,6 +74,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
 .fill i{display:block;height:100%}
 .fill i.c{background:var(--accent)}
 .fill i.v{background:var(--muted);opacity:.5}
+.fill i.a{background:var(--muted);opacity:.8}
 .fill i.over{background:var(--bad)}
 .vano{font-size:12.5px;color:var(--muted)}
 .vano b{font-family:var(--f-num);font-weight:500;color:var(--fg)}
@@ -179,7 +180,7 @@ const RAIL_HOOK=1.2; // raggio del bastone: quello che la gruccia mangia in più
 // ================= STATO =================
 const KEY='platsa_cfg_v3', KEYS_OLD=['platsa_cfg_v2','platsa_cfg_v1'];
 const DEFAULT={
-  b1:[{h:120,door:1,hinge:'L',el:[{t:'v',h:120,rail:1}]}],
+  b1:[{h:120,door:1,hinge:'L',el:[{t:'a',h:120}]}],
   b2:[{h:120,door:1,hinge:'R',el:[{t:'v',h:40},{t:'v',h:40}]}],
   b3:[{h:120,door:0,hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
   b4:[{h:180,door:1,hinge:'R',el:[{t:'v',h:60},{t:'v',h:60}]},{h:40,door:1,hinge:'R',el:[]}],
@@ -190,7 +191,7 @@ function migrate(o){
   for(const sl of SLOTS){
     out[sl.id]=((o&&(o[sl.id]||o[OLDID[sl.id]]))||[]).map(m=>{
       const base={h:+m.h,hinge:m.hinge||'R'};
-      const keep=e=>{const o={t:e.t==='c'?'c':'v',h:+e.h}; if(o.t==='v'&&e.rail) o.rail=1; return o;};
+      const keep=e=>({t:e.t==='c'?'c':(e.t==='a'||e.rail?'a':'v'), h:+e.h});
       if(m.door!==undefined) return {...base,door:m.door?1:0,el:(m.el||[]).map(keep)};
       if(Array.isArray(m.el)) return {...base,door:m.type==='anta'?1:0,el:m.el.map(keep)};
       if(m.type==='cassetti') return {...base,door:0,el:(m.drawers||[]).map(d=>({t:'c',h:+d}))};
@@ -201,17 +202,23 @@ function migrate(o){
   return out;
 }
 let S=null, cur='b1', showSof=false, showFon=true, showDes=true;
-function canOpen(m){ return !!m.door || topDrawer(m)!==null; }
-function openState(){ const o={}; SLOTS.forEach(sl=>o[sl.id]=S[sl.id].map(m=>m.open||0)); return o; }
-function setOpen(v){ SLOTS.forEach(sl=>S[sl.id].forEach((m,i)=>{ m.open = typeof v==='number' ? v : ((v[sl.id]||[])[i]||0); })); }
-function anyOpen(){ return SLOTS.some(sl=>S[sl.id].some(m=>m.open>0)); }
+function openState(){ const o={}; SLOTS.forEach(sl=>o[sl.id]=S[sl.id].map(m=>[m.od||0, m.el.map(e=>e.op?1:0)])); return o; }
+function setOpen(v){
+  SLOTS.forEach(sl=>S[sl.id].forEach((m,i)=>{
+    const st = typeof v==='number' ? [v?90:0, m.el.map(()=>v?1:0)] : ((v[sl.id]||[])[i]||[0,[]]);
+    m.od = m.door ? st[0] : 0;
+    m.el.forEach((e,j)=>{ if(e.t==='c') e.op=(st[1]||[])[j]?1:0; else delete e.op; });
+  }));
+}
+function anyOpen(){ return SLOTS.some(sl=>S[sl.id].some(m=>m.od>0||m.el.some(e=>e.op))); }
 try{
   const raw=localStorage.getItem(KEY)||KEYS_OLD.map(k=>localStorage.getItem(k)).find(Boolean);
-  if(raw){ const p=JSON.parse(raw); if(p&&p.col) S=migrate(p); }
+  // riconosce sia gli id nuovi sia quelli vecchi, se no una configurazione salvata va persa
+  if(raw){ const o=JSON.parse(raw); if(o&&SLOTS.some(sl=>o[sl.id]||o[OLDID[sl.id]])) S=migrate(o); }
 }catch(e){}
 if(!S) S=JSON.parse(JSON.stringify(DEFAULT));
 // l'apertura è stato di vista, non entra nella configurazione salvata
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S,(k,v)=>k==='open'?undefined:v)); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S,(k,v)=>(k==='od'||k==='op')?undefined:v)); }catch(e){} }
 
 // ================= CONTROLLI DI COLLISIONE =================
 // cerniera R = verso il lato aperto (y minore) · L = verso il fondo (y maggiore)
@@ -220,9 +227,11 @@ function sumEl(m){ return (m.el||[]).reduce((a,e)=>a+e.h,0); }
 function freeEl(m){ return m.h-sumEl(m); }
 function topDrawer(m){ let z=0,t=null; for(const e of (m.el||[])){ z+=e.h; if(e.t==='c') t=z; } return t; }
 // bastoni appendiabiti: quota dell'asse dal fondo del telaio e altezza utile sotto
+// tipi di elemento: c = cassetto, v = vano a giorno, a = vano con bastone appendiabiti
+const isVano=e=>e.t!=='c';
 function railsOf(m){
   const out=[]; let z=0;
-  (m.el||[]).forEach(e=>{ if(e.t==='v'&&e.rail) out.push({z:z+e.h-RAIL_Z, drop:e.h-RAIL_Z-RAIL_HOOK}); z+=e.h; });
+  (m.el||[]).forEach(e=>{ if(e.t==='a') out.push({z:z+e.h-RAIL_Z, drop:e.h-RAIL_Z-RAIL_HOOK}); z+=e.h; });
   return out;
 }
 function railUse(d){
@@ -234,7 +243,7 @@ function railUse(d){
 // un ripiano sta sotto ogni vano che non parte dal fondo del telaio, e sotto lo spazio libero in cima
 function shelfZs(m){
   const out=[]; let z=0;
-  (m.el||[]).forEach((e,j)=>{ if(j>0&&e.t==='v') out.push(z); z+=e.h; });
+  (m.el||[]).forEach((e,j)=>{ if(j>0&&isVano(e)) out.push(z); z+=e.h; });
   if((m.el||[]).length && freeEl(m)>0.5) out.push(z);
   return out;
 }
@@ -340,10 +349,13 @@ function modEditor(slot,m,i){
   const bars=m.el.map(e=>`<i class="${over?'over':e.t}" style="width:${(e.h/m.h*100).toFixed(2)}%"></i>`).join('');
   const rows=m.el.map((e,j)=>({e,j})).reverse().map(({e,j})=>`<div class="el">
       <span class="n">${j+1}</span>
-      <select data-act="etype" data-i="${i}" data-j="${j}"><option value="c" ${e.t==='c'?'selected':''}>Cassetto</option><option value="v" ${e.t==='v'?'selected':''}>Vano</option></select>
+      <select data-act="etype" data-i="${i}" data-j="${j}">
+        <option value="c" ${e.t==='c'?'selected':''}>Cassetto</option>
+        <option value="v" ${e.t==='v'?'selected':''}>Vano</option>
+        <option value="a" ${e.t==='a'?'selected':''}>Bastone</option></select>
       <select data-act="eh" data-i="${i}" data-j="${j}">${opts((e.t==='c'?H_CASS:H_VANO).filter(v=>v<=m.h),e.h)}</select>
       <span class="vano num">${fmt(cumEl(m,j))}→${fmt(cumEl(m,j)+e.h)}</span>
-      ${e.t==='v'?`<button class="ib ${e.rail?'on':''}" data-act="erail" data-i="${i}" data-j="${j}" title="Bastone appendiabiti HJÄLPA">Bastone</button>`:''}
+      ${e.t==='c'?`<button class="ib ${e.op?'on':''}" data-act="eop" data-i="${i}" data-j="${j}" title="Sfila questo cassetto">${e.op?'Chiudi':'Sfila'}</button>`:''}
       <span class="gro">
         <button class="ib" data-act="eup" data-i="${i}" data-j="${j}" ${j===n-1?'disabled':''} aria-label="Sposta su">↑</button>
         <button class="ib" data-act="edn" data-i="${i}" data-j="${j}" ${j===0?'disabled':''} aria-label="Sposta giù">↓</button>
@@ -352,24 +364,23 @@ function modEditor(slot,m,i){
   const body=`<div class="row"><label>Anta</label><div class="seg">
       <button data-act="door" data-v="1" data-i="${i}" class="${m.door?'on':''}">Con anta</button>
       <button data-act="door" data-v="0" data-i="${i}" class="${m.door?'':'on'}">Senza</button></div>
-      ${m.door?`<div class="seg">
-        <button data-act="hinge" data-v="L" data-i="${i}" class="${m.hinge==='L'?'on':''}">Cerniere sinistra</button>
-        <button data-act="hinge" data-v="R" data-i="${i}" class="${m.hinge==='R'?'on':''}">Destra</button></div>`:''}</div>
-    ${m.door?`<div class="vano">L = perno verso il fondo · R = perno verso il lato aperto</div>`:''}
+      </div>
+    ${m.door?`<div class="row"><label>Cerniere</label><div class="seg">
+        <button data-act="hinge" data-v="L" data-i="${i}" class="${m.hinge==='L'?'on':''}">Sinistra</button>
+        <button data-act="hinge" data-v="R" data-i="${i}" class="${m.hinge==='R'?'on':''}">Destra</button></div>
+      <span class="vano">sinistra = perno verso il fondo · destra = verso il lato aperto</span></div>
+    <div class="row"><label>Apertura anta</label>
+      <input type="range" min="0" max="90" step="5" value="${m.od||0}" data-act="od" data-i="${i}" aria-label="Apertura dell'anta">
+      <span class="num" data-deg="${i}">${m.od||0}°</span>
+      <button class="btn" data-act="odtog" data-i="${i}" data-tog="${i}">${m.od?'Chiudi':'Apri'}</button></div>`:''}
     <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta: i cassetti vanno senza frontale':'a vista'}</span></div>
     <div class="fill">${bars}</div>
     <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
     <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
-    ${canOpen(m)?`<div class="hr"></div>
-    <div class="row"><label>Apertura</label>
-      <input type="range" min="0" max="90" step="5" value="${m.open||0}" data-act="open" data-i="${i}" aria-label="Apertura di questo telaio">
-      <span class="num" data-deg="${i}">${m.open||0}°</span>
-      <button class="btn" data-act="otog" data-i="${i}" data-tog="${i}">${m.open?'Chiudi':'Apri'}</button>
-      <span class="vano">${m.door?'anta':''}${m.door&&topDrawer(m)!==null?' e ':''}${topDrawer(m)!==null?'cassetti':''}</span></div>`:''}
     <div class="row">
       <button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>
       <button class="btn" data-act="addv" data-i="${i}" ${free<10?'disabled':''}>+ Vano</button>
-      ${free>=10?`<button class="btn" data-act="fillv" data-i="${i}">Riempi con un vano da ${fmt(free)}</button>`:''}
+      ${free>=10?`<button class="btn" data-act="fillv" data-i="${i}" title="Aggiunge un vano alto quanto lo spazio ancora libero, così il telaio non resta con avanzi">Riempi i ${fmt(free)} liberi</button>`:''}
       ${n?`<button class="btn x" data-act="eclear" data-i="${i}">Svuota</button>`:''}
     </div>`;
   return `<div class="mod"><div class="modhead"><b>${slot.column?`Modulo ${i+1} (dal basso) · h `:'Telaio Platsa h '}${hSel}</b>
@@ -393,18 +404,18 @@ function renderEditor(){
 function act(slot,el){
   const mods=S[slot.id], i=+el.dataset.i, j=+el.dataset.j, m=mods[i], a=el.dataset.act;
   // il cursore non può ridisegnare il pannello sotto le dita: aggiorna solo la scena
-  if(a==='open'){
-    m.open=+el.value;
-    const lb=$(`#editor [data-deg="${i}"]`); if(lb) lb.textContent=m.open+'°';
-    const tg=$(`#editor [data-tog="${i}"]`); if(tg) tg.textContent=m.open?'Chiudi':'Apri';
+  if(a==='od'){
+    m.od=+el.value;
+    const lb=$(`#editor [data-deg="${i}"]`); if(lb) lb.textContent=m.od+'°';
+    const tg=$(`#editor [data-tog="${i}"]`); if(tg) tg.textContent=m.od?'Chiudi':'Apri';
     syncAll(); build3D(); return;
   }
-  if(a==='otog'){ m.open=m.open?0:90; syncAll(); build3D(); renderEditor(); return; }
+  if(a==='odtog'){ m.od=m.od?0:90; syncAll(); build3D(); renderEditor(); return; }
+  if(a==='eop'){ m.el[j].op=m.el[j].op?0:1; syncAll(); build3D(); renderEditor(); return; }
   if(a==='door') m.door=+el.dataset.v;
   if(a==='hinge') m.hinge=el.dataset.v;
   if(a==='h'){ m.h=+el.value; while(m.el.length&&sumEl(m)>m.h) m.el.pop(); }
-  if(a==='erail'){ m.el[j].rail=m.el[j].rail?0:1; }
-  if(a==='etype'){ m.el[j].t=el.value; if(el.value==='c') delete m.el[j].rail; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
+  if(a==='etype'){ m.el[j].t=el.value; if(el.value!=='c') delete m.el[j].op; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
   if(a==='eh') m.el[j].h=+el.value;
   if(a==='edel') m.el.splice(j,1);
   if(a==='eup'&&j<m.el.length-1) m.el.splice(j+1,0,m.el.splice(j,1)[0]);
@@ -504,24 +515,28 @@ function build3D(){
   SLOTS.forEach(sl=>{
     const an=analyze(sl);
     stacks(sl).forEach((o,i)=>{
-      const m=o.m, ap=m.open||0, angR=ap*Math.PI/180, ext=ap/90*EXT*0.9;
+      const m=o.m, angR=(m.od||0)*Math.PI/180;
       const lvlD=(an.res.find(r=>r.k==='d'+i)||{}).lv, lvlC=(an.res.find(r=>r.k==='c'+i)||{}).lv;
       const mg=new THREE.Group(); mg.userData={sid:sl.id,mi:i}; furn.add(mg);
       boxR(mg,XF,W,sl.y0,sl.y1,o.z0,o.z1,COLORS.carcass);
       // interno: c'è anche dietro l'anta, solo arretrato dello spessore del frontale
       const td=topDrawer(m);
       let z=o.z0;
-      m.el.forEach(el=>{
+      m.el.forEach((el,ej)=>{
         if(el.h<=0) return;
-        if(el.t==='c'&&m.door){
-          // cassetto interno: cassa a vista, nessun frontale e nessuna maniglia
-          boxR(mg,XF+1-ext,W-2-ext,sl.y0+2,sl.y1-2,z+1,z+Math.min(el.h-4,13),COLORS.box);
-        } else if(el.t==='c'){
-          const isTop=(td!==null&&Math.abs(z+el.h-(o.z0+td))<0.01);
-          const col=(lvlC==='bad'&&isTop)?COLORS.bad:COLORS.front;
-          boxR(mg,XF-T_FR-ext,XF-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
-          if(ext>0.5) boxR(mg,XF-ext,XF,sl.y0+2,sl.y1-2,z+1,z+el.h-6,COLORS.box);
-          boxR(mg,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
+        if(el.t==='c'){
+          // ogni cassetto si sfila per conto suo: gruppo a parte, cliccabile
+          const dg=new THREE.Group(); dg.userData={sid:sl.id,mi:i,ej}; mg.add(dg);
+          const ext=el.op?EXT*0.9:0;
+          if(m.door){
+            boxR(dg,XF+1-ext,W-2-ext,sl.y0+2,sl.y1-2,z+1,z+Math.min(el.h-4,13),COLORS.box);
+          } else {
+            const isTop=(td!==null&&Math.abs(z+el.h-(o.z0+td))<0.01);
+            const col=(lvlC==='bad'&&isTop)?COLORS.bad:COLORS.front;
+            boxR(dg,XF-T_FR-ext,XF-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
+            if(ext>0.5) boxR(dg,XF-ext,XF,sl.y0+2,sl.y1-2,z+1,z+el.h-6,COLORS.box);
+            boxR(dg,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
+          }
         } else if(!m.door){
           boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
         }
@@ -538,7 +553,7 @@ function build3D(){
       });
       if(m.door){
         const h=hingeY(sl,m), sg=(m.hinge==='R')?1:-1;
-        const piv=new THREE.Group(); piv.position.copy(P(XF,h,o.z0)); mg.add(piv);
+        const piv=new THREE.Group(); piv.userData={sid:sl.id,mi:i,door:1}; piv.position.copy(P(XF,h,o.z0)); mg.add(piv);
         const hh=o.z1-o.z0-0.6;
         const g=new THREE.BoxGeometry(T_FR,hh,59.4);
         const col=lvlD==='bad'?COLORS.bad:(lvlD==='warn'?COLORS.warn:COLORS.door);
@@ -599,8 +614,10 @@ function pickModule(cx,cy){
 }
 function toggleAt(cx,cy){
   const ud=pickModule(cx,cy); if(!ud) return;
-  const m=S[ud.sid][ud.mi]; if(!canOpen(m)) return;
-  m.open=m.open?0:90;
+  const m=S[ud.sid][ud.mi];
+  if(ud.ej!==undefined){ const e=m.el[ud.ej]; e.op=e.op?0:1; }
+  else if(m.door){ m.od=m.od?0:90; }
+  else return;
   syncAll(); cur=ud.sid; renderAll();
 }
 const cv=ren.domElement, pts=new Map(); let pd=0, down=null, moved=false;
@@ -761,9 +778,9 @@ function drawProspetto(g,bx,base,k){
         } else {
           if(!hid){
             g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
-            g.text(sl.y1-3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
+            g.text(sl.y1-3.5,z+e.h/2-1.6,(e.t==='a'?'vano appendiabiti ':'vano ')+e.h,{fs:2.2,c:'#888'});
           }
-          if(e.rail){
+          if(e.t==='a'){
             const rz=z+e.h-RAIL_Z, rc=hid?'#8a8a8a':'#555';
             g.line(sl.y0+4,rz,sl.y1-4,rz,{w:0.7,c:rc,d:dd});
             g.dot(sl.y0+4,rz,0.55,rc); g.dot(sl.y1-4,rz,0.55,rc);
@@ -984,7 +1001,7 @@ function pageListe(g,n,tot){
       C.push({t:modDesc(m)+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
       let z=o.z0;
       m.el.forEach((e,j)=>{
-        C.push({t:'  '+(j+1)+'. '+(e.t==='c'?(m.door?'cassetto interno':'cassetto'):'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)+(e.rail?' · bastone a '+fmt(z+e.h-RAIL_Z):''),c:'#555'});
+        C.push({t:'  '+(j+1)+'. '+(e.t==='c'?(m.door?'cassetto interno':'cassetto'):(e.t==='a'?'vano appendiabiti':'vano'))+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)+(e.t==='a'?' · bastone a '+fmt(z+e.h-RAIL_Z):''),c:'#555'});
         z+=e.h;
       });
       if(m.el.length&&o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
