@@ -53,6 +53,7 @@ prospetto e nella pianta.
 | Soffitto tra le travi | 108,5 cm a sinistra, 183 cm a destra |
 | Falda davanti | 263 cm al muro finestra, 239 cm alla prima trave |
 | Mobili | fronte a 180 cm dalla parete finestra, profondità 55, a terra senza piedini |
+| Piano sopra i bassi | elemento top SMÅSTAD 60 × 55 × 2, uno per blocco (alternativa: SPILDRA 60 × 56,8 × 3) |
 
 ## Come si apre
 
