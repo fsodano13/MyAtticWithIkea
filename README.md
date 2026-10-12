@@ -17,6 +17,9 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
+- **Apertura per singolo telaio**: ogni anta e ogni cassettiera ha il suo cursore 0–90°, e nel 3D
+  basta toccare un'anta o un cassetto per aprirlo. L'apertura è stato di vista, non viene salvata
+  con la configurazione.
 - **Viste 2D e PDF**: il tasto *Salva PDF* produce un A4 orizzontale di quattro tavole — viste 3D
   con il riepilogo dei quattro vani, prospetto e pianta in 1:20, una sezione per vano in 1:30,
   lista componenti e composizione quota per quota. Il tasto *Viste 2D* mostra le stesse tavole a

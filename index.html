@@ -35,8 +35,6 @@ img{max-width:100%}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 .chip.go{border-color:var(--accent);color:var(--accent)}
 .chip:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.slider{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px}
-.slider input{width:110px}
 .panel{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:16px 16px 32px;min-width:0}
 .tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:14px}
 .tab{border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:10px;padding:8px 6px;cursor:pointer;text-align:left;font:500 12.5px var(--f-ui);display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -101,7 +99,6 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
   html,body{height:auto}
   .view{height:58vh;min-height:360px}
   .panel{border-left:0;border-top:1px solid var(--line)}
-  .slider input{width:90px}
   .vtop h1{font-size:15px}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
@@ -119,7 +116,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
 
 <div class="app">
   <div class="view" id="view">
-    <div class="vtop"><h1>Parete attrezzata · nicchia 235 × 246</h1><p>Trascina per ruotare · pizzica per lo zoom</p></div>
+    <div class="vtop"><h1>Parete attrezzata · nicchia 235 × 246</h1><p>Trascina per ruotare · pizzica per lo zoom · tocca un'anta o un cassetto per aprirlo</p></div>
     <div class="vbar">
       <button class="chip" data-v="aperto">Lato aperto</button>
       <button class="chip" data-v="fronte">Di fronte</button>
@@ -127,7 +124,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
       <button class="chip" id="tSof">Soffitto</button>
       <button class="chip" id="tFon">Parete fondo</button>
       <button class="chip" id="tDes">Parete destra</button>
-      <span class="slider"><label for="ang">Apertura</label><input id="ang" type="range" min="0" max="90" value="0"><span class="num" id="angv">0°</span></span>
+      <button class="chip" id="tAll">Apri tutte</button>
       <button class="chip go" id="t2d">Viste 2D</button>
       <button class="chip go" id="tPdf">Salva PDF</button>
     </div>
@@ -201,13 +198,18 @@ function migrate(o){
   }
   return out;
 }
-let S=null, cur='b', openAng=0, showSof=false, showFon=true, showDes=true;
+let S=null, cur='b', showSof=false, showFon=true, showDes=true;
+function canOpen(m){ return !!m.door || topDrawer(m)!==null; }
+function openState(){ const o={}; SLOTS.forEach(sl=>o[sl.id]=S[sl.id].map(m=>m.open||0)); return o; }
+function setOpen(v){ SLOTS.forEach(sl=>S[sl.id].forEach((m,i)=>{ m.open = typeof v==='number' ? v : ((v[sl.id]||[])[i]||0); })); }
+function anyOpen(){ return SLOTS.some(sl=>S[sl.id].some(m=>m.open>0)); }
 try{
   const raw=localStorage.getItem(KEY)||KEYS_OLD.map(k=>localStorage.getItem(k)).find(Boolean);
   if(raw){ const p=JSON.parse(raw); if(p&&p.col) S=migrate(p); }
 }catch(e){}
 if(!S) S=JSON.parse(JSON.stringify(DEFAULT));
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+// l'apertura è stato di vista, non entra nella configurazione salvata
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S,(k,v)=>k==='open'?undefined:v)); }catch(e){} }
 
 // ================= CONTROLLI DI COLLISIONE =================
 // cerniera R = verso il lato aperto (y minore) · L = verso il fondo (y maggiore)
@@ -351,6 +353,12 @@ function modEditor(slot,m,i){
     <div class="fill">${bars}</div>
     <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
     <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
+    ${canOpen(m)?`<div class="hr"></div>
+    <div class="row"><label>Apertura</label>
+      <input type="range" min="0" max="90" step="5" value="${m.open||0}" data-act="open" data-i="${i}" aria-label="Apertura di questo telaio">
+      <span class="num" data-deg="${i}">${m.open||0}°</span>
+      <button class="btn" data-act="otog" data-i="${i}" data-tog="${i}">${m.open?'Chiudi':'Apri'}</button>
+      <span class="vano">${m.door?'anta':''}${m.door&&topDrawer(m)!==null?' e ':''}${topDrawer(m)!==null?'cassetti':''}</span></div>`:''}
     <div class="row">
       <button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>
       <button class="btn" data-act="addv" data-i="${i}" ${free<10?'disabled':''}>+ Vano</button>
@@ -371,11 +379,20 @@ function renderEditor(){
   html+=a.res.map(r=>`<div class="status ${r.lv}">${r.msg}</div>`).join('');
   $('#editor').innerHTML=html;
   $('#editor').querySelectorAll('[data-act]').forEach(el=>{
-    el.addEventListener(el.tagName==='SELECT'?'change':'click',()=>act(slot,el));
+    const ev = el.tagName==='SELECT' ? 'change' : (el.type==='range' ? 'input' : 'click');
+    el.addEventListener(ev,()=>act(slot,el));
   });
 }
 function act(slot,el){
   const mods=S[slot.id], i=+el.dataset.i, j=+el.dataset.j, m=mods[i], a=el.dataset.act;
+  // il cursore non può ridisegnare il pannello sotto le dita: aggiorna solo la scena
+  if(a==='open'){
+    m.open=+el.value;
+    const lb=$(`#editor [data-deg="${i}"]`); if(lb) lb.textContent=m.open+'°';
+    const tg=$(`#editor [data-tog="${i}"]`); if(tg) tg.textContent=m.open?'Chiudi':'Apri';
+    syncAll(); build3D(); return;
+  }
+  if(a==='otog'){ m.open=m.open?0:90; syncAll(); build3D(); renderEditor(); return; }
   if(a==='door') m.door=+el.dataset.v;
   if(a==='hinge') m.hinge=el.dataset.v;
   if(a==='h'){ m.h=+el.value; while(m.el.length&&sumEl(m)>m.h) m.el.pop(); }
@@ -473,13 +490,13 @@ function build3D(){
   furn=new THREE.Group(); scene.add(furn);
   boxR(furn,XF,W,0,6,0,220,COLORS.fill);
   boxR(furn,XF-1.6,W,66,246,120,122.5,COLORS.top);
-  const angR=openAng*Math.PI/180, ext=openAng/90*EXT*0.9;
   SLOTS.forEach(sl=>{
     const an=analyze(sl);
     stacks(sl).forEach((o,i)=>{
-      const m=o.m;
+      const m=o.m, ap=m.open||0, angR=ap*Math.PI/180, ext=ap/90*EXT*0.9;
       const lvlD=(an.res.find(r=>r.k==='d'+i)||{}).lv, lvlC=(an.res.find(r=>r.k==='c'+i)||{}).lv;
-      boxR(furn,XF,W,sl.y0,sl.y1,o.z0,o.z1,COLORS.carcass);
+      const mg=new THREE.Group(); mg.userData={sid:sl.id,mi:i}; furn.add(mg);
+      boxR(mg,XF,W,sl.y0,sl.y1,o.z0,o.z1,COLORS.carcass);
       // interno: c'è anche dietro l'anta, solo arretrato dello spessore del frontale
       const inset=m.door?T_FR+0.4:0, td=topDrawer(m);
       let z=o.z0;
@@ -488,26 +505,26 @@ function build3D(){
         if(el.t==='c'){
           const isTop=(td!==null&&Math.abs(z+el.h-(o.z0+td))<0.01);
           const col=(lvlC==='bad'&&isTop)?COLORS.bad:COLORS.front;
-          boxR(furn,XF-inset-T_FR-ext,XF-inset-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
-          if(ext>0.5) boxR(furn,XF-inset-ext,XF-inset,sl.y0+2,sl.y1-2,z+1,z+el.h-6,0xc9d6e2);
-          boxR(furn,XF-inset-T_FR-ext-1,XF-inset-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
+          boxR(mg,XF-inset-T_FR-ext,XF-inset-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
+          if(ext>0.5) boxR(mg,XF-inset-ext,XF-inset,sl.y0+2,sl.y1-2,z+1,z+el.h-6,0xc9d6e2);
+          boxR(mg,XF-inset-T_FR-ext-1,XF-inset-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
         } else if(!m.door){
-          boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
+          boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
         }
         z+=el.h;
       });
-      if(!m.door&&z<o.z1-0.5) boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.8,o.z1-0.8,COLORS.open);
-      shelfZs(m).forEach(sz=>boxR(furn,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+sz-1.8,o.z0+sz,COLORS.shelf));
+      if(!m.door&&z<o.z1-0.5) boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.8,o.z1-0.8,COLORS.open);
+      shelfZs(m).forEach(sz=>boxR(mg,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+sz-1.8,o.z0+sz,COLORS.shelf));
       railsOf(m).forEach(rl=>{
         const len=sl.y1-sl.y0-4;
         const gg=new THREE.CylinderGeometry(RAIL_HOOK,RAIL_HOOK,len,10);
         const me=new THREE.Mesh(gg,mat(COLORS.rail));
         me.position.copy(P(XF+DEPTH/2,(sl.y0+sl.y1)/2,o.z0+rl.z));
-        me.rotation.x=Math.PI/2; furn.add(me);
+        me.rotation.x=Math.PI/2; mg.add(me);
       });
       if(m.door){
         const h=hingeY(sl,m), sg=(m.hinge==='R')?1:-1;
-        const piv=new THREE.Group(); piv.position.copy(P(XF,h,o.z0)); furn.add(piv);
+        const piv=new THREE.Group(); piv.position.copy(P(XF,h,o.z0)); mg.add(piv);
         const hh=o.z1-o.z0-0.6;
         const g=new THREE.BoxGeometry(T_FR,hh,59.4);
         const col=lvlD==='bad'?COLORS.bad:(lvlD==='warn'?COLORS.warn:COLORS.door);
@@ -552,13 +569,36 @@ document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{
 $('#tSof').onclick=()=>{ showSof=!showSof; syncChips(); draw(); };
 $('#tFon').onclick=()=>{ showFon=!showFon; syncChips(); draw(); };
 $('#tDes').onclick=()=>{ showDes=!showDes; syncChips(); draw(); };
-$('#ang').oninput=e=>{ openAng=+e.target.value; $('#angv').textContent=openAng+'°'; build3D(); };
-const cv=ren.domElement, pts=new Map(); let pd=0;
-cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);});
-const up=e=>{pts.delete(e.pointerId);pd=0;};
+function syncAll(){ $('#tAll').textContent = anyOpen()?'Chiudi tutte':'Apri tutte'; }
+$('#tAll').onclick=()=>{ setOpen(anyOpen()?0:90); syncAll(); renderAll(); };
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+function pickModule(cx,cy){
+  const b=cv.getBoundingClientRect();
+  ndc.x=((cx-b.left)/b.width)*2-1; ndc.y=-((cy-b.top)/b.height)*2+1;
+  ray.setFromCamera(ndc,cam);
+  for(const h of ray.intersectObjects(furn.children,true)){
+    let o=h.object;
+    while(o&&!(o.userData&&o.userData.sid)) o=o.parent;
+    if(o) return o.userData;
+  }
+  return null;
+}
+function toggleAt(cx,cy){
+  const ud=pickModule(cx,cy); if(!ud) return;
+  const m=S[ud.sid][ud.mi]; if(!canOpen(m)) return;
+  m.open=m.open?0:90;
+  syncAll(); cur=ud.sid; renderAll();
+}
+const cv=ren.domElement, pts=new Map(); let pd=0, down=null, moved=false;
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);down=[e.clientX,e.clientY];moved=false;});
+const up=e=>{
+  if(down&&!moved&&pts.size===1) toggleAt(e.clientX,e.clientY);
+  pts.delete(e.pointerId); pd=0; if(!pts.size) down=null;
+};
 cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
 cv.addEventListener('pointermove',e=>{
   if(!pts.has(e.pointerId))return; const o=pts.get(e.pointerId);
+  if(down&&Math.hypot(e.clientX-down[0],e.clientY-down[1])>5) moved=true;
   if(pts.size===1){th-=(e.clientX-o[0])*0.008;ph-=(e.clientY-o[1])*0.008;}
   pts.set(e.pointerId,[e.clientX,e.clientY]);
   if(pts.size===2){const [a,b]=[...pts.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(pd)r*=pd/d;pd=d;}
@@ -570,14 +610,14 @@ new ResizeObserver(()=>{size();draw();}).observe(view);
 // --- istantanee della scena 3D da mettere nelle tavole ---
 const PXMM=7;                       // pixel per mm (~178 dpi di stampa)
 function snap3D(o){
-  const prev={th,ph,r,sof:showSof,fon:showFon,des:showDes,ang:openAng};
+  const prev={th,ph,r,sof:showSof,fon:showFon,des:showDes,ap:openState()};
   if(o.view){ const v=views[o.view]; th=v[0]; ph=v[1]; r=v[2]; showSof=v[3]; }
   r*=o.zoom||0.8;
   if(o.sof!==undefined) showSof=o.sof;
   if(o.fon!==undefined) showFon=o.fon;
   if(o.des!==undefined) showDes=o.des;
-  const rebuild = o.ang!==undefined && o.ang!==openAng;
-  if(rebuild) openAng=o.ang;
+  const rebuild = o.ang!==undefined;
+  if(rebuild) setOpen(o.ang);
   const pr=ren.getPixelRatio(), w=Math.round(o.wmm*PXMM), h=Math.round(o.hmm*PXMM);
   ren.setPixelRatio(1); ren.setSize(w,h,false);
   cam.aspect=w/h; cam.updateProjectionMatrix();
@@ -586,16 +626,16 @@ function snap3D(o){
   try{ url=ren.domElement.toDataURL('image/jpeg',0.86); }catch(e){}
   th=prev.th; ph=prev.ph; r=prev.r; showSof=prev.sof; showFon=prev.fon; showDes=prev.des;
   ren.setPixelRatio(pr);
-  if(rebuild){ openAng=prev.ang; build3D(); }
+  if(rebuild){ setOpen(prev.ap); build3D(); }
   size(); draw(); syncChips();
   return url;
 }
 let snapCache={key:'',v:null};
 function getSnaps(){
-  const key=JSON.stringify(S)+'|'+[th,ph,r,openAng,showSof,showFon,showDes].join(',');
+  const key=JSON.stringify(S)+'|'+[th,ph,r,showSof,showFon,showDes].join(',');
   if(snapCache.key===key) return snapCache.v;
   const v={
-    main:{url:snap3D({wmm:168,hmm:97,zoom:0.78}), cap:'vista corrente · apertura '+openAng+'°'},
+    main:{url:snap3D({wmm:168,hmm:97,zoom:0.78}), cap:'vista corrente, con le aperture come le hai lasciate'},
     b:{url:snap3D({view:'fronte',ang:0,wmm:81,hmm:52,zoom:0.82}), cap:'di fronte · tutto chiuso'},
     c:{url:snap3D({view:'tre',ang:90,fon:false,sof:false,wmm:81,hmm:52,zoom:0.66}), cap:'3/4 · ante e cassetti aperti, fondo nascosto'}
   };
@@ -1014,6 +1054,6 @@ $('#bPdf').onclick=savePDF;
 $('#bPrint').onclick=()=>window.print();
 addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#ov').hidden) $('#ov').hidden=true; });
 
-syncChips(); size(); renderAll();
+syncChips(); syncAll(); size(); renderAll();
 </script>
 </body></html>
