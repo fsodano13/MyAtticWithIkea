@@ -70,6 +70,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
 .ib:hover{color:var(--fg);border-color:var(--accent)}
 .ib[disabled]{opacity:.3;cursor:default}
 .ib.x:hover{color:var(--bad);border-color:var(--bad)}
+.ib.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 .hr{height:1px;background:var(--line);margin:2px 0}
 .fill{height:7px;border-radius:4px;background:var(--soft);display:flex;overflow:hidden;margin:2px 0}
 .fill i{display:block;height:100%}
@@ -171,8 +172,10 @@ const SLOTS=[
   {id:'b', name:'Platsa B', hint:'centro', y0:126, y1:186},
   {id:'c', name:'Platsa C', hint:'fondo', y0:186, y1:246},
 ];
-const H_CASS=[20,30,40];                       // altezze cassetto
-const H_VANO=[10,15,20,25,30,35,40,50,60];     // altezze vano a giorno
+const H_CASS=[20,30,40];                                                  // altezze cassetto
+const H_VANO=[10,15,20,25,30,35,40,50,60,70,80,90,100,110,120,140,160,180]; // altezze vano
+const RAIL_Z=4;      // asse del bastone appendiabiti sotto il cielo del vano
+const RAIL_HOOK=1.2; // raggio del bastone: quello che la gruccia mangia in più
 
 // ================= STATO =================
 const KEY='platsa_cfg_v3', KEYS_OLD=['platsa_cfg_v2','platsa_cfg_v1'];
@@ -180,7 +183,7 @@ const DEFAULT={
   col:[{h:180,door:1,hinge:'R',el:[{t:'v',h:60},{t:'v',h:60}]},{h:40,door:1,hinge:'R',el:[]}],
   a:[{h:120,door:0,hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
   b:[{h:120,door:1,hinge:'R',el:[{t:'v',h:40},{t:'v',h:40}]}],
-  c:[{h:120,door:1,hinge:'L',el:[]}],
+  c:[{h:120,door:1,hinge:'L',el:[{t:'v',h:120,rail:1}]}],
 };
 // v1 drawers:[20,30] · v2 type:'anta'|'comp' · v3 anta e contenuto indipendenti
 function migrate(o){
@@ -188,8 +191,9 @@ function migrate(o){
   for(const sl of SLOTS){
     out[sl.id]=((o&&o[sl.id])||[]).map(m=>{
       const base={h:+m.h,hinge:m.hinge||'R'};
-      if(m.door!==undefined) return {...base,door:m.door?1:0,el:(m.el||[]).map(e=>({t:e.t==='c'?'c':'v',h:+e.h}))};
-      if(Array.isArray(m.el)) return {...base,door:m.type==='anta'?1:0,el:m.el.map(e=>({t:e.t==='c'?'c':'v',h:+e.h}))};
+      const keep=e=>{const o={t:e.t==='c'?'c':'v',h:+e.h}; if(o.t==='v'&&e.rail) o.rail=1; return o;};
+      if(m.door!==undefined) return {...base,door:m.door?1:0,el:(m.el||[]).map(keep)};
+      if(Array.isArray(m.el)) return {...base,door:m.type==='anta'?1:0,el:m.el.map(keep)};
       if(m.type==='cassetti') return {...base,door:0,el:(m.drawers||[]).map(d=>({t:'c',h:+d}))};
       if(m.type==='giorno')   return {...base,door:0,el:[{t:'v',h:+m.h}]};
       return {...base,door:1,el:[]};
@@ -211,6 +215,18 @@ function hingeY(slot,m){ return m.hinge==='R'? slot.y0 : slot.y1; }
 function sumEl(m){ return (m.el||[]).reduce((a,e)=>a+e.h,0); }
 function freeEl(m){ return m.h-sumEl(m); }
 function topDrawer(m){ let z=0,t=null; for(const e of (m.el||[])){ z+=e.h; if(e.t==='c') t=z; } return t; }
+// bastoni appendiabiti: quota dell'asse dal fondo del telaio e altezza utile sotto
+function railsOf(m){
+  const out=[]; let z=0;
+  (m.el||[]).forEach(e=>{ if(e.t==='v'&&e.rail) out.push({z:z+e.h-RAIL_Z, drop:e.h-RAIL_Z-RAIL_HOOK}); z+=e.h; });
+  return out;
+}
+function railUse(d){
+  return d<60?['bad','troppo poco per appendere']
+       : d<100?['warn','solo capi corti o piegati sulla gruccia']
+       : d<150?['ok','camicie e giacche, circa 15-20 capi']
+       :       ['ok','anche cappotti e capi lunghi'];
+}
 // un ripiano sta sotto ogni vano che non parte dal fondo del telaio, e sotto lo spazio libero in cima
 function shelfZs(m){
   const out=[]; let z=0;
@@ -280,6 +296,10 @@ function analyze(slot){
       }
       const sh=shelfZs(m);
       if(sh.length) res.push({k:'s'+i, lv:'ok', msg:`${sh.length} ripian${sh.length>1?'i':'o'} a quota ${sh.map(z=>fmt(o.z0+z)).join(', ')} cm`});
+      railsOf(m).forEach((rl,k)=>{
+        const [lv,txt]=railUse(rl.drop);
+        res.push({k:'r'+i+'_'+k, lv, msg:`Bastone appendiabiti a ${fmt(o.z0+rl.z)} cm: ${fmt(rl.drop)} cm utili sotto, ${txt}`});
+      });
       if(m.el.length && m.h-s>0.5) res.push({k:'f'+i, lv:'ok', msg:`Spazio libero in cima al telaio: ${fmt(m.h-s)} cm`});
     }
   });
@@ -312,8 +332,9 @@ function modEditor(slot,m,i){
   const rows=m.el.map((e,j)=>({e,j})).reverse().map(({e,j})=>`<div class="el">
       <span class="n">${j+1}</span>
       <select data-act="etype" data-i="${i}" data-j="${j}"><option value="c" ${e.t==='c'?'selected':''}>Cassetto</option><option value="v" ${e.t==='v'?'selected':''}>Vano</option></select>
-      <select data-act="eh" data-i="${i}" data-j="${j}">${opts(e.t==='c'?H_CASS:H_VANO,e.h)}</select>
+      <select data-act="eh" data-i="${i}" data-j="${j}">${opts((e.t==='c'?H_CASS:H_VANO).filter(v=>v<=m.h),e.h)}</select>
       <span class="vano num">${fmt(cumEl(m,j))}→${fmt(cumEl(m,j)+e.h)}</span>
+      ${e.t==='v'?`<button class="ib ${e.rail?'on':''}" data-act="erail" data-i="${i}" data-j="${j}" title="Bastone appendiabiti HJÄLPA">Bastone</button>`:''}
       <span class="gro">
         <button class="ib" data-act="eup" data-i="${i}" data-j="${j}" ${j===n-1?'disabled':''} aria-label="Sposta su">↑</button>
         <button class="ib" data-act="edn" data-i="${i}" data-j="${j}" ${j===0?'disabled':''} aria-label="Sposta giù">↓</button>
@@ -328,7 +349,7 @@ function modEditor(slot,m,i){
     ${m.door?`<div class="vano">L = perno verso il fondo · R = perno verso il lato aperto</div>`:''}
     <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta':'a vista'}</span></div>
     <div class="fill">${bars}</div>
-    <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}</div>
+    <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
     <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
     <div class="row">
       <button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>
@@ -358,7 +379,8 @@ function act(slot,el){
   if(a==='door') m.door=+el.dataset.v;
   if(a==='hinge') m.hinge=el.dataset.v;
   if(a==='h'){ m.h=+el.value; while(m.el.length&&sumEl(m)>m.h) m.el.pop(); }
-  if(a==='etype'){ m.el[j].t=el.value; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
+  if(a==='erail'){ m.el[j].rail=m.el[j].rail?0:1; }
+  if(a==='etype'){ m.el[j].t=el.value; if(el.value==='c') delete m.el[j].rail; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
   if(a==='eh') m.el[j].h=+el.value;
   if(a==='edel') m.el.splice(j,1);
   if(a==='eup'&&j<m.el.length-1) m.el.splice(j+1,0,m.el.splice(j,1)[0]);
@@ -372,15 +394,16 @@ function act(slot,el){
   save(); renderAll();
 }
 function bom(){
-  const telai={}, ante={}, cass={}, vani={}; let ripiani=0, liberi=0;
+  const telai={}, ante={}, cass={}, vani={}; let ripiani=0, liberi=0, aste=0;
   SLOTS.forEach(sl=>S[sl.id].forEach(m=>{
     telai[m.h]=(telai[m.h]||0)+1;
     if(m.door) ante[m.h]=(ante[m.h]||0)+1;
     m.el.forEach(e=>{ if(e.t==='c') cass[e.h]=(cass[e.h]||0)+1; else vani[e.h]=(vani[e.h]||0)+1; });
     ripiani+=shelfZs(m).length;
+    aste+=railsOf(m).length;
     if(freeEl(m)>0.5) liberi++;
   }));
-  return {telai,ante,cass,vani,ripiani,liberi};
+  return {telai,ante,cass,vani,ripiani,liberi,aste};
 }
 function renderSum(){
   const b=bom();
@@ -390,6 +413,7 @@ function renderSum(){
     ${li(b.ante,k=>`anta 60 × ${k}`)}
     ${li(b.cass,k=>`cassetto con frontale 60 × ${k}`)}
     ${b.ripiani?`<li>${b.ripiani} × ripiano 60 × 55</li>`:''}
+    ${b.aste?`<li>${b.aste} × bastone appendiabiti HJÄLPA regolabile 60–100 × 55</li>`:''}
     <li>1 × piano in legno 180 × 57 sopra le basse</li>
     <li>1 × pannello di chiusura 6 cm sul lato aperto</li></ul>`;
 }
@@ -443,7 +467,7 @@ function boxR(parent,x0,x1,y0,y1,z0,z1,color){
   return me;
 }
 let furn=null;
-const COLORS={carcass:0xdbe6f1,front:0xf7fbff,open:0x5d7690,handle:0x2f6ea8,door:0xf7fbff,bad:0xf28b82,warn:0xf5d07a,top:0xd2b98c,fill:0xe6e6e6,shelf:0xcfdbe8};
+const COLORS={rail:0x8d98a3,carcass:0xdbe6f1,front:0xf7fbff,open:0x5d7690,handle:0x2f6ea8,door:0xf7fbff,bad:0xf28b82,warn:0xf5d07a,top:0xd2b98c,fill:0xe6e6e6,shelf:0xcfdbe8};
 function build3D(){
   if(furn) scene.remove(furn);
   furn=new THREE.Group(); scene.add(furn);
@@ -474,6 +498,13 @@ function build3D(){
       });
       if(!m.door&&z<o.z1-0.5) boxR(furn,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.8,o.z1-0.8,COLORS.open);
       shelfZs(m).forEach(sz=>boxR(furn,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+sz-1.8,o.z0+sz,COLORS.shelf));
+      railsOf(m).forEach(rl=>{
+        const len=sl.y1-sl.y0-4;
+        const gg=new THREE.CylinderGeometry(RAIL_HOOK,RAIL_HOOK,len,10);
+        const me=new THREE.Mesh(gg,mat(COLORS.rail));
+        me.position.copy(P(XF+DEPTH/2,(sl.y0+sl.y1)/2,o.z0+rl.z));
+        me.rotation.x=Math.PI/2; furn.add(me);
+      });
       if(m.door){
         const h=hingeY(sl,m), sg=(m.hinge==='R')?1:-1;
         const piv=new THREE.Group(); piv.position.copy(P(XF,h,o.z0)); furn.add(piv);
@@ -673,9 +704,17 @@ function drawProspetto(g,bx,base,k){
           g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:hid?0.18:0.25,c:cc,d:dd,f:hid?null:'#f4f4f4'});
           if(!hid) g.line(sl.y0+w/2-9,z+e.h-5,sl.y0+w/2+9,z+e.h-5,{w:0.55,c:'#555'});
           g.text(sl.y1-3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:hid?'#999':'#333'});
-        } else if(!hid){
-          g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
-          g.text(sl.y1-3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
+        } else {
+          if(!hid){
+            g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
+            g.text(sl.y1-3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
+          }
+          if(e.rail){
+            const rz=z+e.h-RAIL_Z, rc=hid?'#8a8a8a':'#555';
+            g.line(sl.y0+4,rz,sl.y1-4,rz,{w:0.7,c:rc,d:dd});
+            g.dot(sl.y0+4,rz,0.55,rc); g.dot(sl.y1-4,rz,0.55,rc);
+            g.text(sl.y1-3.5,rz-5,'bastone · '+fmt(e.h-RAIL_Z-RAIL_HOOK)+' utili',{fs:2.1,c:rc});
+          }
         }
         z+=e.h;
       });
@@ -765,6 +804,11 @@ function drawSezione(g,sl,bx,base,k){
     const m=o.m; tot=Math.max(tot,o.z1);
     g.rect(XF,o.z0,DEPTH,m.h,{w:0.45,f:'#f2f2f2'});
     shelfZs(m).forEach(sz=>g.line(XF,o.z0+sz,W,o.z0+sz,{w:0.25,c:'#888'}));
+    railsOf(m).forEach(rl=>{
+      g.dot(XF+DEPTH/2,o.z0+rl.z,0.8,'#555');
+      g.line(XF+DEPTH/2,o.z0+rl.z-1,XF+DEPTH/2,o.z0+rl.z-rl.drop,{w:0.15,c:'#aaa',d:'1,1.2'});
+      g.text(XF+DEPTH/2-2,o.z0+rl.z-rl.drop/2,fmt(rl.drop)+' utili',{fs:2,an:'middle',c:'#888',rot:1});
+    });
     const td=topDrawer(m);
     if(td!==null){
       const off=m.door?T_FR:0;
@@ -809,6 +853,8 @@ function modDesc(m,short){
   if(c.length) q.push(c.length+(c.length>1?' cassetti ':' cassetto ')+c.map(e=>e.h).join('+'));
   if(sh.length) q.push(sh.length+(sh.length>1?' ripiani a ':' ripiano a ')+sh.map(fmt).join(', '));
   else if(v.length) q.push(v.length+(v.length>1?' vani ':' vano ')+v.map(e=>e.h).join('+'));
+  const rl=railsOf(m);
+  if(rl.length) q.push(rl.length+(rl.length>1?' bastoni appendiabiti':' bastone appendiabiti')+(short?'':' ('+rl.map(r=>fmt(r.drop)+' cm utili').join(', ')+')'));
   const f=freeEl(m);
   return 'telaio '+m.h+' · '+(q.join(' · ')||'vuoto, nessun frontale')+(!short&&m.el.length&&f>0.5?' · libero in cima '+fmt(f):'');
 }
@@ -820,7 +866,8 @@ function bomLines(){
   add(b.ante,k=>'anta 60 × '+k); add(b.cass,k=>'cassetto con frontale 60 × '+k);
   L.push({t:' '}); L.push({t:'Interni',b:true});
   if(b.ripiani) L.push({t:b.ripiani+' × ripiano 60 × 55'});
-  else L.push({t:'nessun ripiano',c:'#888'});
+  if(b.aste) L.push({t:b.aste+' × bastone appendiabiti HJÄLPA regolabile 60–100 × 55'});
+  if(!b.ripiani&&!b.aste) L.push({t:'nessun accessorio interno',c:'#888'});
   L.push({t:' '}); L.push({t:'Su misura',b:true});
   L.push({t:'1 × piano in legno 180 × 57 sopra le basse'});
   L.push({t:'1 × pannello di chiusura 6 cm sul lato aperto'});
@@ -880,7 +927,10 @@ function pageListe(g,n,tot){
       const m=o.m;
       C.push({t:modDesc(m)+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
       let z=o.z0;
-      m.el.forEach((e,j)=>{ C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h),c:'#555'}); z+=e.h; });
+      m.el.forEach((e,j)=>{
+        C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)+(e.rail?' · bastone a '+fmt(z+e.h-RAIL_Z):''),c:'#555'});
+        z+=e.h;
+      });
       if(m.el.length&&o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
     });
     C.push({t:' '});
@@ -901,6 +951,8 @@ function pageListe(g,n,tot){
     {t:'Mobili a terra senza piedini, profondità 55, fronte a 180 cm dalla parete finestra.'},
     {t:'Ante FONNES spesse 1,6 cm, larghe 60, rotazione 0–90°.'},
     {t:'Corsa cassetti ipotizzata 50 cm.'},
+    {t:'Bastone HJÄLPA 4 cm sotto il cielo del vano; altezza utile misurata sotto il bastone.'},
+    {t:'Sotto il bastone: oltre 150 cm per i capi lunghi, oltre 100 per camicie e giacche.'},
     {t:'Margine verde oltre 3 cm, giallo sotto 3 cm, rosso in interferenza.'},
     {t:' '},
     {t:'Da verificare',b:true},

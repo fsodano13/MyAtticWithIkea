@@ -11,6 +11,9 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
   cerniere), e separatamente si riempie con una pila di cassetti e vani in qualsiasi ordine
   (es. 4 cassetti da 20 più 2 vani da 20). I ripiani nascono dalle divisioni fra i vani, anche
   dietro un'anta, e la quota di ognuno viene calcolata e riportata nei disegni.
+- **Bastone appendiabiti** (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55)
+  attivabile su ogni vano: il tool calcola l'altezza utile sotto il bastone e dice se ci stanno
+  capi lunghi, camicie e giacche, o niente.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
