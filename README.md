@@ -15,7 +15,8 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
   calcolati e quotati da soli. Sovrapposizioni e pezzi fuori dal telaio vengono segnalati.
 - **Bastone appendiabiti** (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55):
   il tool misura l'altezza utile sotto, cioè fino al primo pezzo che trova, e dice se ci stanno
-  capi lunghi, camicie e giacche, o niente.
+  capi lunghi, camicie e giacche, o niente. Controlla anche la luce **sopra** il tubo: se non ci
+  sono 4 cm il gancio della gruccia non passa, e il tool dice di quanto abbassarlo.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
 - **Regola dei telai con anta**: dentro un telaio con anta ci vanno solo ripiani e bastoni, non

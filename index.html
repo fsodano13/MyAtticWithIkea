@@ -175,7 +175,8 @@ const SLOTS=[
 const OLDID={b1:'c', b2:'b', b3:'a', b4:'col'};   // id delle versioni precedenti
 const H_CASS=[20,30,40];   // altezze del frontale cassetto
 const T_SHELF=1.8;         // spessore del ripiano
-const RAIL_Z=4;            // quanto sta sotto al cielo un bastone, nelle vecchie configurazioni
+const RAIL_Z=7;            // quanto sta sotto al cielo un bastone appena messo
+const RAIL_HEAD=4;         // luce minima sopra il tubo perché il gancio della gruccia passi
 const RAIL_HOOK=1.2;       // raggio del bastone: quello che la gruccia mangia in più
 
 // ================= STATO =================
@@ -273,6 +274,12 @@ function railDrop(m,e){
   solidSpans(m).forEach(sp=>{ if(sp[1]<=e.z+0.01 && sp[1]>base) base=sp[1]; });
   return e.z-base-RAIL_HOOK;
 }
+// luce sopra il tubo: fino al primo pezzo sopra, o al cielo del telaio (spesso T_SHELF)
+function railHead(m,e){
+  let top=m.h-T_SHELF;
+  solidSpans(m).forEach(sp=>{ if(sp[0]>=e.z-0.01 && sp[0]<top) top=sp[0]; });
+  return top-e.z-RAIL_HOOK;
+}
 function elName(e){ return e.t==='c'?('cassetto '+e.h):(e.t==='r'?'ripiano':'bastone'); }
 function conflicts(m){
   const o=els(m), out=[];
@@ -365,8 +372,10 @@ function analyze(slot){
     if(sh.length) res.push({k:'s'+i, lv:'ok',
       msg:`${sh.length} ripian${sh.length>1?'i':'o'} a ${sh.map(e=>fmt(o.z0+e.z)).join(', ')} cm da terra`});
     rails(m).forEach((e,k)=>{
-      const d=railDrop(m,e), [lv,txt]=railUse(d);
+      const d=railDrop(m,e), [lv,txt]=railUse(d), hd=railHead(m,e);
       res.push({k:'r'+i+'_'+k, lv, msg:`Bastone a ${fmt(o.z0+e.z)} cm: ${fmt(d)} cm utili sotto, ${txt}`});
+      if(hd<RAIL_HEAD) res.push({k:'rh'+i+'_'+k, lv: hd<2.5?'bad':'warn',
+        msg:`Bastone a ${fmt(o.z0+e.z)} cm: sopra il tubo restano ${fmt(hd)} cm, il gancio della gruccia ne vuole ${RAIL_HEAD}. Abbassalo a ${fmt(o.z0+e.z-(RAIL_HEAD-hd))}`});
     });
     const gp=gaps(m);
     if(gp.length) res.push({k:'g'+i, lv:'ok',
@@ -418,7 +427,7 @@ function modEditor(slot,m,i){
       <span class="vano">cm</span>
       ${e.t==='c'?`<select data-act="eh" data-i="${i}" data-j="${j}">${opts(H_CASS.filter(v=>v<=m.h),e.h)}</select>
         <button class="ib ${e.op?'on':''}" data-act="eop" data-i="${i}" data-j="${j}" title="Sfila questo cassetto">${e.op?'Chiudi':'Sfila'}</button>`:''}
-      ${e.t==='a'?`<span class="vano num">${fmt(railDrop(m,e))} utili</span>`:''}
+      ${e.t==='a'?`<span class="vano num" title="altezza utile sotto il bastone · luce sopra il tubo">${fmt(railDrop(m,e))}↓ ${fmt(railHead(m,e))}↑</span>`:''}
       <span class="gro"><button class="ib x" data-act="edel" data-i="${i}" data-j="${j}" aria-label="Togli">✕</button></span>
     </div>`).join('');
   const body=`<div class="row"><label>Anta</label><div class="seg">
@@ -1096,6 +1105,7 @@ function pageListe(g,n,tot){
     {t:'Quote da terra: il ripiano (spesso 1,8) e il cassetto si quotano alla base, il bastone all\u2019asse.'},
     {t:'Piano sopra i blocchi bassi: elemento top SMÅSTAD 60 × 55 × 2, uno per blocco. In alternativa SPILDRA 60 × 56,8 × 3.'},
     {t:'Sotto il bastone: oltre 150 cm per i capi lunghi, oltre 100 per camicie e giacche.'},
+    {t:'Sopra il tubo del bastone servono 4 cm liberi, se no il gancio della gruccia non passa.'},
     {t:'Margine verde oltre 3 cm, giallo sotto 3 cm, rosso in interferenza.'},
     {t:' '},
     {t:'Da verificare',b:true},
