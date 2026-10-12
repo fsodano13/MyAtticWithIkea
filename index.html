@@ -85,6 +85,8 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
 .sum{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
 .sum ul{margin:6px 0 0;padding-left:18px;line-height:1.6}
 .foot{color:var(--muted);font-size:11.5px;margin-top:12px;line-height:1.5}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:60;background:var(--fg);color:var(--bg);
+  padding:9px 16px;border-radius:999px;font:500 13px var(--f-ui);box-shadow:0 2px 12px rgba(0,0,0,.25);max-width:90vw;text-align:center}
 .ov{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column}
 .ovbar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
 .ovbar b{margin-right:auto;font-size:14px}
@@ -107,6 +109,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
   .ov{position:static;background:#fff;display:block}
   .ovbar{display:none!important}
   .ovb{padding:0;gap:0;display:block;overflow:visible}
+  .toast{display:none!important}
   .sheet{box-shadow:none;width:100%;border-radius:0;break-after:page;page-break-after:always}
   @page{size:A4 landscape;margin:0}
 }
@@ -123,7 +126,8 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
       <button class="chip" id="tFon">Parete fondo</button>
       <button class="chip" id="tDes">Parete destra</button>
       <span class="slider"><label for="ang">Apertura</label><input id="ang" type="range" min="0" max="90" value="0"><span class="num" id="angv">0°</span></span>
-      <button class="chip go" id="t2d">Viste 2D · PDF</button>
+      <button class="chip go" id="t2d">Viste 2D</button>
+      <button class="chip go" id="tPdf">Salva PDF</button>
     </div>
   </div>
   <aside class="panel">
@@ -133,6 +137,8 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
     <p class="foot">Misure in cm. Mobili appoggiati a terra senza piedini, profondità 55, ante FONNES spesse 1,6. Cassetti: corsa ipotizzata 50 cm. I frontali e le altezze dei cassetti vanno verificati sul sito IKEA. Il controllo usa le misure rilevate: trave sotto 154,5 a destra e 80 a sinistra, travi da 13,5 a 73,5 e 184 cm dal lato aperto.</p>
   </aside>
 </div>
+
+<div class="toast" id="toast" hidden></div>
 
 <div class="ov" id="ov" hidden>
   <div class="ovbar">
@@ -391,14 +397,14 @@ const scene=new THREE.Scene();
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 scene.background=new THREE.Color(cssv('--scene')||'#eceeec');
 const cam=new THREE.PerspectiveCamera(45,1,1,6000);
-const ren=new THREE.WebGLRenderer({antialias:true}); ren.setPixelRatio(Math.min(devicePixelRatio,2));
+const ren=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true}); ren.setPixelRatio(Math.min(devicePixelRatio,2));
 view.prepend(ren.domElement);
 scene.add(new THREE.AmbientLight(0xffffff,0.62));
 const dl=new THREE.DirectionalLight(0xffffff,0.5); dl.position.set(300,500,400); scene.add(dl);
 const P=(x,y,z)=>new THREE.Vector3(x-117.5,z,-(y-123));
 const RC={pavimento:0xb9b2a6,parete:0xf3f2ee,vetro:0x9fd0f5,legno:0xe4d8c0,riempimento:0xe9dfca,trave:0xc9ac7c,tetto:0xd6c29c};
 const roomLine=new THREE.LineBasicMaterial({color:0x4a4a4a});
-const ceilParts=[], fondoParts=[], destraParts=[]; let tettoGroup;
+const ceilParts=[], fondoParts=[], destraParts=[], sinistraParts=[]; let tettoGroup;
 for(const [gname,mats] of Object.entries(ROOM)){
   const grp=new THREE.Group(); scene.add(grp); if(gname==='tetto') tettoGroup=grp;
   for(const [mname,qs] of Object.entries(mats)){
@@ -417,6 +423,7 @@ for(const [gname,mats] of Object.entries(ROOM)){
       if(mname==='legno'||mname==='riempimento') ceilParts.push(part);
       if(mname==='parete'&&q.every(p=>p[1]>=246)) fondoParts.push(part);
       if(mname==='parete'&&q.every(p=>p[0]>=235)) destraParts.push(part);
+      if(mname==='parete'&&q.every(p=>p[0]<=0)) sinistraParts.push(part);
     }
   }
 }
@@ -491,6 +498,9 @@ function draw(){
   tettoGroup.visible=showSof; ceilParts.forEach(p=>p.visible=showSof);
   fondoParts.forEach(p=>p.visible=showFon);
   destraParts.forEach(p=>p.visible=showDes);
+  // la parete della finestra sparisce da sola quando la guardi da fuori, se no copre tutto
+  const camX=cam.position.x+117.5;
+  sinistraParts.forEach(p=>p.visible=camX>=0);
   ren.render(scene,cam);
 }
 // i tre chip hanno la stessa logica: acceso = elemento mostrato
@@ -522,6 +532,42 @@ cv.addEventListener('pointermove',e=>{
 cv.addEventListener('wheel',e=>{e.preventDefault();r*=1+e.deltaY*0.001;draw();},{passive:false});
 new ResizeObserver(()=>{size();draw();}).observe(view);
 
+// --- istantanee della scena 3D da mettere nelle tavole ---
+const PXMM=7;                       // pixel per mm (~178 dpi di stampa)
+function snap3D(o){
+  const prev={th,ph,r,sof:showSof,fon:showFon,des:showDes,ang:openAng};
+  if(o.view){ const v=views[o.view]; th=v[0]; ph=v[1]; r=v[2]; showSof=v[3]; }
+  r*=o.zoom||0.8;
+  if(o.sof!==undefined) showSof=o.sof;
+  if(o.fon!==undefined) showFon=o.fon;
+  if(o.des!==undefined) showDes=o.des;
+  const rebuild = o.ang!==undefined && o.ang!==openAng;
+  if(rebuild) openAng=o.ang;
+  const pr=ren.getPixelRatio(), w=Math.round(o.wmm*PXMM), h=Math.round(o.hmm*PXMM);
+  ren.setPixelRatio(1); ren.setSize(w,h,false);
+  cam.aspect=w/h; cam.updateProjectionMatrix();
+  if(rebuild) build3D(); else draw();
+  let url='';
+  try{ url=ren.domElement.toDataURL('image/jpeg',0.86); }catch(e){}
+  th=prev.th; ph=prev.ph; r=prev.r; showSof=prev.sof; showFon=prev.fon; showDes=prev.des;
+  ren.setPixelRatio(pr);
+  if(rebuild){ openAng=prev.ang; build3D(); }
+  size(); draw(); syncChips();
+  return url;
+}
+let snapCache={key:'',v:null};
+function getSnaps(){
+  const key=JSON.stringify(S)+'|'+[th,ph,r,openAng,showSof,showFon,showDes].join(',');
+  if(snapCache.key===key) return snapCache.v;
+  const v={
+    main:{url:snap3D({wmm:168,hmm:97,zoom:0.78}), cap:'vista corrente · apertura '+openAng+'°'},
+    b:{url:snap3D({view:'fronte',ang:0,wmm:81,hmm:52,zoom:0.82}), cap:'di fronte · tutto chiuso'},
+    c:{url:snap3D({view:'tre',ang:90,fon:false,sof:false,wmm:81,hmm:52,zoom:0.66}), cap:'3/4 · ante e cassetti aperti, fondo nascosto'}
+  };
+  snapCache={key,v};
+  return v;
+}
+
 // ================= DISEGNO 2D: motore comune SVG / PDF =================
 const PAGE={w:297,h:210};
 const INK='#111', THIN='#8a8a8a', QUO='#666', ACC='#2f6ea8', BAD='#b3261e';
@@ -536,6 +582,8 @@ function svgCtx(){
     rect(u,v,w,h,o){ const x1=+X(u),x2=+X(u+w);
       s+=`<rect x="${Math.min(x1,x2).toFixed(2)}" y="${Y(v+h)}" width="${Math.abs(w*t.kx).toFixed(2)}" height="${(h*t.k).toFixed(2)}" ${at(o)}/>`; },
     poly(p,o){ s+=`<polyline points="${p.map(q=>X(q[0])+','+Y(q[1])).join(' ')}" ${at(o)}/>`; },
+    dot(u,v,rad,c){ s+=`<circle cx="${X(u)}" cy="${Y(v)}" r="${rad}" fill="${c}"/>`; },
+    img(u,v,w,h,url){ if(url) s+=`<image x="${X(u)}" y="${Y(v+h)}" width="${(w*t.kx).toFixed(2)}" height="${(h*t.k).toFixed(2)}" href="${url}" preserveAspectRatio="xMidYMid slice"/>`; },
     text(u,v,str,o={}){ const x=X(u),y=Y(v);
       s+=`<text x="${x}" y="${y}" font-family="Helvetica,Arial,sans-serif" font-size="${o.fs||2.6}" fill="${o.c||INK}" text-anchor="${o.an||'start'}"${o.b?' font-weight="700"':''}${o.rot?` transform="rotate(-90 ${x} ${y})"`:''}>${esc(str)}</text>`; },
     done(){ const o=s; s=''; return o; }
@@ -553,6 +601,8 @@ function pdfCtx(doc){
     line(u1,v1,u2,v2,o){ set(o); doc.line(X(u1),Y(v1),X(u2),Y(v2)); },
     rect(u,v,w,h,o={}){ set(o); doc.rect(Math.min(X(u),X(u+w)),Y(v+h),Math.abs(w*t.kx),h*t.k,o.f?'FD':'S'); },
     poly(p,o){ set(o); for(let i=1;i<p.length;i++) doc.line(X(p[i-1][0]),Y(p[i-1][1]),X(p[i][0]),Y(p[i][1])); },
+    dot(u,v,rad,c){ const f=hex2rgb(c); doc.setFillColor(f[0],f[1],f[2]); doc.circle(X(u),Y(v),rad,'F'); },
+    img(u,v,w,h,url){ if(url) try{ doc.addImage(url,'JPEG',X(u),Y(v+h),w*t.kx,h*t.k); }catch(e){} },
     text(u,v,str,o={}){ const c=hex2rgb(o.c||INK); doc.setTextColor(c[0],c[1],c[2]);
       doc.setFontSize((o.fs||2.6)*2.835); doc.setFont('helvetica',o.b?'bold':'normal');
       doc.text(String(str),X(u),Y(v),{align:o.an==='middle'?'center':(o.an==='end'?'right':'left'),angle:o.rot?90:0}); },
@@ -722,37 +772,32 @@ function drawSezione(g,sl,bx,base,k){
 function colText(g,x,yTop,lines,fs,lead,maxCh){
   let y=yTop;
   lines.forEach(l=>{
-    const txt=l.t, parts=[];
+    const ind=l.dot?4:0, txt=l.t, parts=[];
     if(txt.length>maxCh){
       let cur='';
       txt.split(' ').forEach(w=>{ if((cur+' '+w).trim().length>maxCh){parts.push(cur.trim());cur=w;} else cur+=' '+w; });
       if(cur.trim()) parts.push(cur.trim());
     } else parts.push(txt);
-    parts.forEach((p,i)=>{ g.text(x+(i?2.5:0),y,p,{fs,c:l.c||'#333',b:l.b&&!i}); y-=lead; });
+    parts.forEach((q,i)=>{
+      if(!i&&l.dot) g.dot(x+1,y+0.8,1,DOTC[l.dot]);
+      g.text(x+ind+(i?2.5:0),y,q,{fs,c:l.c||'#333',b:l.b&&!i});
+      y-=lead;
+    });
   });
   return y;
 }
-function page1(g){
-  frame(g,1,3,'Prospetto dei mobili e pianta della nicchia','1:20');
-  drawProspetto(g,22,168,0.5);
-  drawPianta(g,164,168,0.5);
+const DOTC={ok:'#2e7d4f',warn:'#9a6a00',bad:'#b3261e'};
+function modDesc(m,short){
+  if(m.type==='anta') return 'telaio '+m.h+' · anta, cerniere '+(m.hinge==='R'
+    ? (short?'a destra':'a destra (verso il lato aperto)')
+    : (short?'a sinistra':'a sinistra (verso il fondo)'));
+  const c=m.el.filter(e=>e.t==='c'), v=m.el.filter(e=>e.t==='v'), q=[];
+  if(c.length) q.push(c.length+(c.length>1?' cassetti ':' cassetto ')+c.map(e=>e.h).join('+'));
+  if(v.length) q.push(v.length+(v.length>1?' vani ':' vano ')+v.map(e=>e.h).join('+'));
+  const f=freeEl(m);
+  return 'telaio '+m.h+' · '+(q.join(' + ')||'vuoto')+(f>0.5?' · libero '+fmt(f):'');
 }
-function page2(g){
-  frame(g,2,3,'Sezioni verticali e verifica delle aperture','1:30');
-  const xs=[16,85,154,223], k=1/3;
-  [...SLOTS].reverse().forEach((sl,i)=>drawSezione(g,sl,xs[i],124,k));
-  g.setT(0,PAGE.h,1);
-  g.text(13,76,'Verifiche automatiche',{fs:3,b:true});
-  const xs2=[14,83,152,221];
-  [...SLOTS].reverse().forEach((sl,i)=>{
-    const a=analyze(sl), lines=[{t:sl.name+' · '+fmt(sl.y0)+'→'+fmt(sl.y1)+' cm',b:true,c:'#111'}];
-    a.res.forEach(r=>lines.push({t:'· '+r.msg,c:r.lv==='bad'?BAD:(r.lv==='warn'?'#8a6500':'#444')}));
-    colText(g,xs2[i],70,lines,2.5,3.4,42);
-  });
-}
-function page3(g){
-  frame(g,3,3,'Lista componenti e composizione','—');
-  g.setT(0,PAGE.h,1);
+function bomLines(){
   const b=bom(), L=[];
   const add=(o,f)=>Object.keys(o).sort((x,y)=>x-y).forEach(k=>L.push({t:o[k]+' × '+f(k)}));
   L.push({t:'Telai',b:true}); add(b.telai,k=>'PLATSA 60 × 55 × '+k);
@@ -764,23 +809,71 @@ function page3(g){
   L.push({t:' '}); L.push({t:'Su misura',b:true});
   L.push({t:'1 × piano in legno 180 × 57 sopra le basse'});
   L.push({t:'1 × pannello di chiusura 6 cm sul lato aperto'});
-  g.text(13,178,'Lista componenti',{fs:3,b:true});
-  colText(g,13,172,L,2.7,4,40);
+  return L;
+}
+// --- PAGINA 1: viste 3D e riepilogo ---
+function pageRiepilogo(g,n,tot,snaps){
+  frame(g,n,tot,'Viste 3D e riepilogo della configurazione','—');
+  g.setT(0,PAGE.h,1);
+  const S3=snaps||{main:{},b:{},c:{}};
+  g.img(13,80,168,97,S3.main.url); g.rect(13,80,168,97,{w:0.3,c:'#bbb'});
+  g.text(13,76,S3.main.cap||'',{fs:2.3,c:'#777'});
+  g.img(13,22,81,52,S3.b.url); g.rect(13,22,81,52,{w:0.3,c:'#bbb'});
+  g.text(13,18,S3.b.cap||'',{fs:2.3,c:'#777'});
+  g.img(100,22,81,52,S3.c.url); g.rect(100,22,81,52,{w:0.3,c:'#bbb'});
+  g.text(100,18,S3.c.cap||'',{fs:2.3,c:'#777'});
+  g.line(187,18,187,180,{w:0.3,c:'#ddd'});
+  g.text(193,177,'Riepilogo',{fs:3,b:true});
+  const R=[];
+  SLOTS.forEach(sl=>{
+    const a=analyze(sl);
+    R.push({t:sl.name+' · da '+fmt(sl.y0)+' a '+fmt(sl.y1)+' cm',b:true,dot:a.worst});
+    stacks(sl).forEach(o=>R.push({t:modDesc(o.m,true),c:'#555'}));
+    a.res.forEach(r=>R.push({t:'· '+r.msg,c:r.lv==='bad'?BAD:(r.lv==='warn'?'#8a6500':'#444')}));
+    R.push({t:' '});
+  });
+  colText(g,193,171,R,2.4,3.3,44);
+}
+// --- PAGINA 2: prospetto e pianta ---
+function pageTavole(g,n,tot){
+  frame(g,n,tot,'Prospetto dei mobili e pianta della nicchia','1:20');
+  drawProspetto(g,22,168,0.5);
+  drawPianta(g,164,168,0.5);
+}
+// --- PAGINA 3: sezioni ---
+function pageSezioni(g,n,tot){
+  frame(g,n,tot,'Sezioni verticali e verifica delle aperture','1:30');
+  const xs=[16,85,154,223], k=1/3;
+  [...SLOTS].reverse().forEach((sl,i)=>drawSezione(g,sl,xs[i],124,k));
+  g.setT(0,PAGE.h,1);
+  g.text(13,76,'Verifiche automatiche',{fs:3,b:true});
+  const xs2=[14,83,152,221];
+  [...SLOTS].reverse().forEach((sl,i)=>{
+    const a=analyze(sl), lines=[{t:sl.name+' · '+fmt(sl.y0)+'→'+fmt(sl.y1)+' cm',b:true,c:'#111',dot:a.worst}];
+    a.res.forEach(r=>lines.push({t:'· '+r.msg,c:r.lv==='bad'?BAD:(r.lv==='warn'?'#8a6500':'#444')}));
+    colText(g,xs2[i],70,lines,2.5,3.4,42);
+  });
+}
+// --- PAGINA 4: composizione e note ---
+function pageListe(g,n,tot){
+  frame(g,n,tot,'Lista componenti, composizione quota per quota e note','—');
+  g.setT(0,PAGE.h,1);
   const C=[];
   SLOTS.forEach(sl=>{
     C.push({t:sl.name+' · da '+fmt(sl.y0)+' a '+fmt(sl.y1)+' cm',b:true});
-    stacks(sl).forEach((o,i)=>{
+    stacks(sl).forEach(o=>{
       const m=o.m;
-      if(m.type==='anta') C.push({t:'telaio '+m.h+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+') · anta, cerniere '+(m.hinge==='R'?'a destra, verso il lato aperto':'a sinistra, verso il fondo')});
-      else{
-        C.push({t:'telaio '+m.h+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
+      C.push({t:modDesc(m)+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
+      if(m.type!=='anta'){
         let z=o.z0;
-        m.el.forEach((e,j)=>{ C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)}); z+=e.h; });
-        if(o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1)});
+        m.el.forEach((e,j)=>{ C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':'vano')+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h),c:'#555'}); z+=e.h; });
+        if(o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
       }
     });
     C.push({t:' '});
   });
+  g.text(13,178,'Lista componenti',{fs:3,b:true});
+  colText(g,13,172,bomLines(),2.5,3.5,40);
   g.text(108,178,'Composizione',{fs:3,b:true});
   colText(g,108,172,C,2.5,3.5,46);
   const N=[
@@ -804,13 +897,13 @@ function page3(g){
   g.text(203,178,'Note',{fs:3,b:true});
   colText(g,203,172,N,2.5,3.5,40);
 }
-const PAGES=[page1,page2,page3];
+const PAGES=[pageRiepilogo,pageTavole,pageSezioni,pageListe];
 
 // --- uscita SVG + PDF ---
 function renderSheets(){
-  const g=svgCtx();
-  $('#ovb').innerHTML=PAGES.map(fn=>{
-    fn(g);
+  const g=svgCtx(), snaps=getSnaps();
+  $('#ovb').innerHTML=PAGES.map((fn,i)=>{
+    fn(g,i+1,PAGES.length,snaps);
     return `<div class="sheet"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PAGE.w} ${PAGE.h}" role="img">${g.done()}</svg></div>`;
   }).join('');
 }
@@ -825,25 +918,32 @@ function loadJsPDF(){
   });
   return pdfLoad;
 }
+let noteT=0;
+function note(t,ms){
+  $('#ovmsg').textContent=t||'';
+  const el=$('#toast');
+  if(t){ el.textContent=t; el.hidden=false; } else el.hidden=true;
+  clearTimeout(noteT); if(t&&ms) noteT=setTimeout(()=>note(''),ms);
+}
 async function savePDF(){
-  const msg=$('#ovmsg');
-  msg.textContent='Preparo il PDF…';
+  note('Preparo il PDF: tre viste 3D e quattro tavole…');
   try{
     await loadJsPDF();
     const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});
     doc.setProperties({title:'Parete attrezzata PLATSA · mansarda'});
     const g=pdfCtx(doc);
-    PAGES.forEach((fn,i)=>{ if(i) doc.addPage(); fn(g); });
+    const snaps=getSnaps();
+    PAGES.forEach((fn,i)=>{ if(i) doc.addPage(); fn(g,i+1,PAGES.length,snaps); });
     doc.save('platsa-mansarda.pdf');
-    msg.textContent='PDF salvato.';
+    note('PDF salvato: platsa-mansarda.pdf',5000);
   }catch(e){
-    msg.textContent = window.jspdf
-      ? 'PDF non riuscito ('+e.message+'): usa Stampa → Salva come PDF.'
-      : 'Niente rete per scaricare la libreria PDF: usa Stampa → Salva come PDF.';
+    note(window.jspdf
+      ? 'PDF non riuscito ('+e.message+'): apri Viste 2D e usa Stampa → Salva come PDF.'
+      : 'Niente rete per scaricare la libreria PDF: apri Viste 2D e usa Stampa → Salva come PDF.',9000);
   }
-  setTimeout(()=>{ if(msg.textContent) msg.textContent=''; },6000);
 }
-$('#t2d').onclick=()=>{ renderSheets(); $('#ov').hidden=false; $('#ov').scrollTop=0; };
+$('#t2d').onclick=()=>{ note('Preparo le tavole…'); setTimeout(()=>{ renderSheets(); $('#ov').hidden=false; $('#ovb').scrollTop=0; note(''); },16); };
+$('#tPdf').onclick=savePDF;
 $('#bClose').onclick=()=>{ $('#ov').hidden=true; };
 $('#bPdf').onclick=savePDF;
 $('#bPrint').onclick=()=>window.print();

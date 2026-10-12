@@ -13,8 +13,10 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
-- **Viste 2D**: prospetto e pianta in scala 1:20, sezione per ogni vano in 1:30, lista componenti
-  e verifiche. Si esportano in **PDF vettoriale A4** (jsPDF) oppure si stampano dal browser.
+- **Viste 2D e PDF**: il tasto *Salva PDF* produce un A4 orizzontale di quattro tavole — viste 3D
+  con il riepilogo dei quattro vani, prospetto e pianta in 1:20, una sezione per vano in 1:30,
+  lista componenti e composizione quota per quota. Il tasto *Viste 2D* mostra le stesse tavole a
+  schermo e permette di stamparle. Disegni vettoriali, immagini 3D catturate dalla scena.
 - La configurazione resta salvata nel browser (localStorage); le vecchie configurazioni vengono
   migrate automaticamente al nuovo formato.
 
