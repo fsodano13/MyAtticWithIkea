@@ -493,15 +493,20 @@ function draw(){
   destraParts.forEach(p=>p.visible=showDes);
   ren.render(scene,cam);
 }
+// i tre chip hanno la stessa logica: acceso = elemento mostrato
+function syncChips(){
+  [['#tSof',showSof],['#tFon',showFon],['#tDes',showDes]].forEach(([id,on])=>{
+    $(id).classList.toggle('on',on); $(id).setAttribute('aria-pressed',on?'true':'false');
+  });
+}
 const views={aperto:[-0.35,1.2,560,true],fronte:[-1.5707,1.35,520,false],tre:[-0.55,0.75,620,false]};
 document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{
   const v=views[b.dataset.v]; th=v[0];ph=v[1];r=v[2];showSof=v[3];
-  $('#tSof').classList.toggle('on',showSof); draw();
+  syncChips(); draw();
 });
-function toggle(btn,get,set){ $(btn).onclick=()=>{ set(!get()); $(btn).classList.toggle('on',get()); draw(); }; }
-toggle('#tSof',()=>showSof,v=>showSof=v);
-$('#tFon').onclick=()=>{ showFon=!showFon; $('#tFon').classList.toggle('on',!showFon); draw(); };
-$('#tDes').onclick=()=>{ showDes=!showDes; $('#tDes').classList.toggle('on',!showDes); draw(); };
+$('#tSof').onclick=()=>{ showSof=!showSof; syncChips(); draw(); };
+$('#tFon').onclick=()=>{ showFon=!showFon; syncChips(); draw(); };
+$('#tDes').onclick=()=>{ showDes=!showDes; syncChips(); draw(); };
 $('#ang').oninput=e=>{ openAng=+e.target.value; $('#angv').textContent=openAng+'°'; build3D(); };
 const cv=ren.domElement, pts=new Map(); let pd=0;
 cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);});
@@ -522,13 +527,14 @@ const PAGE={w:297,h:210};
 const INK='#111', THIN='#8a8a8a', QUO='#666', ACC='#2f6ea8', BAD='#b3261e';
 const hex2rgb=c=>{ let h=String(c).replace('#',''); if(h.length===3) h=h.split('').map(x=>x+x).join(''); return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16)||0); };
 function svgCtx(){
-  let s='', t={ox:0,oy:0,k:1};
-  const X=u=>(t.ox+u*t.k).toFixed(2), Y=v=>(t.oy-v*t.k).toFixed(2);
+  let s='', t={ox:0,oy:0,k:1,kx:1};
+  const X=u=>(t.ox+u*t.kx).toFixed(2), Y=v=>(t.oy-v*t.k).toFixed(2);
   const at=(o={})=>`stroke="${o.c||INK}" stroke-width="${o.w||0.25}" fill="${o.f||'none'}"${o.d?` stroke-dasharray="${o.d}"`:''} stroke-linecap="round"`;
   return {
-    setT(ox,oy,k){t={ox,oy,k};},
+    setT(ox,oy,k,kx){t={ox,oy,k,kx:kx===undefined?k:kx};},
     line(u1,v1,u2,v2,o){ s+=`<line x1="${X(u1)}" y1="${Y(v1)}" x2="${X(u2)}" y2="${Y(v2)}" ${at(o)}/>`; },
-    rect(u,v,w,h,o){ s+=`<rect x="${X(u)}" y="${Y(v+h)}" width="${(w*t.k).toFixed(2)}" height="${(h*t.k).toFixed(2)}" ${at(o)}/>`; },
+    rect(u,v,w,h,o){ const x1=+X(u),x2=+X(u+w);
+      s+=`<rect x="${Math.min(x1,x2).toFixed(2)}" y="${Y(v+h)}" width="${Math.abs(w*t.kx).toFixed(2)}" height="${(h*t.k).toFixed(2)}" ${at(o)}/>`; },
     poly(p,o){ s+=`<polyline points="${p.map(q=>X(q[0])+','+Y(q[1])).join(' ')}" ${at(o)}/>`; },
     text(u,v,str,o={}){ const x=X(u),y=Y(v);
       s+=`<text x="${x}" y="${y}" font-family="Helvetica,Arial,sans-serif" font-size="${o.fs||2.6}" fill="${o.c||INK}" text-anchor="${o.an||'start'}"${o.b?' font-weight="700"':''}${o.rot?` transform="rotate(-90 ${x} ${y})"`:''}>${esc(str)}</text>`; },
@@ -536,16 +542,16 @@ function svgCtx(){
   };
 }
 function pdfCtx(doc){
-  let t={ox:0,oy:0,k:1};
-  const X=u=>t.ox+u*t.k, Y=v=>t.oy-v*t.k;
+  let t={ox:0,oy:0,k:1,kx:1};
+  const X=u=>t.ox+u*t.kx, Y=v=>t.oy-v*t.k;
   const set=(o={})=>{ doc.setLineWidth(o.w||0.25);
     const c=hex2rgb(o.c||INK); doc.setDrawColor(c[0],c[1],c[2]);
     doc.setLineDashPattern(o.d?o.d.split(',').map(Number):[],0);
     if(o.f){ const f=hex2rgb(o.f); doc.setFillColor(f[0],f[1],f[2]); } };
   return {
-    setT(ox,oy,k){t={ox,oy,k};},
+    setT(ox,oy,k,kx){t={ox,oy,k,kx:kx===undefined?k:kx};},
     line(u1,v1,u2,v2,o){ set(o); doc.line(X(u1),Y(v1),X(u2),Y(v2)); },
-    rect(u,v,w,h,o={}){ set(o); doc.rect(X(u),Y(v+h),w*t.k,h*t.k,o.f?'FD':'S'); },
+    rect(u,v,w,h,o={}){ set(o); doc.rect(Math.min(X(u),X(u+w)),Y(v+h),Math.abs(w*t.kx),h*t.k,o.f?'FD':'S'); },
     poly(p,o){ set(o); for(let i=1;i<p.length;i++) doc.line(X(p[i-1][0]),Y(p[i-1][1]),X(p[i][0]),Y(p[i][1])); },
     text(u,v,str,o={}){ const c=hex2rgb(o.c||INK); doc.setTextColor(c[0],c[1],c[2]);
       doc.setFontSize((o.fs||2.6)*2.835); doc.setFont('helvetica',o.b?'bold':'normal');
@@ -590,8 +596,8 @@ function frame(g,n,tot,sub,scala){
 }
 // --- PROSPETTO (piano x=180, u = y stanza, v = z) ---
 function drawProspetto(g,bx,base,k){
-  g.setT(bx,base,k);
-  g.text(0,278,'PROSPETTO dei mobili · visto dal lato aperto della stanza',{fs:3,b:true});
+  g.setT(bx+D*k,base,k,-k);   // guardando i frontali: il lato aperto resta a destra
+  g.text(D,278,'PROSPETTO dei mobili · guardando i frontali dalla stanza',{fs:3,b:true});
   hatch(g,YB[0],under(XF),BW,ceilN(XF)-under(XF),5);
   hatch(g,YB[1],under(XF),BW,ceilN(XF)-under(XF),5);
   g.text(YB[0]+BW/2,ceilN(XF)+3,'trave',{fs:2.2,an:'middle',c:THIN});
@@ -599,7 +605,7 @@ function drawProspetto(g,bx,base,k){
   g.poly(ceilProfile(W),{w:0.2,c:THIN,d:'2,1.5'});
   g.poly(ceilProfile(XF),{w:0.45});
   g.line(-6,0,D+6,0,{w:0.6});
-  g.text(D+8,ceilN(XF)+1,'soffitto a 235',{fs:2.1,c:THIN});
+  g.text(-8,ceilN(XF)+1,'soffitto a 235',{fs:2.1,c:THIN});
   SLOTS.forEach(sl=>{
     const w=sl.y1-sl.y0;
     stacks(sl).forEach(o=>{
@@ -618,33 +624,33 @@ function drawProspetto(g,bx,base,k){
           if(e.t==='c'){
             g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.25,f:'#f4f4f4'});
             g.line(sl.y0+w/2-9,z+e.h-5,sl.y0+w/2+9,z+e.h-5,{w:0.55,c:'#555'});
-            g.text(sl.y0+3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:'#333'});
+            g.text(sl.y1-3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:'#333'});
           } else {
             g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
-            g.text(sl.y0+3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
+            g.text(sl.y1-3.5,z+e.h/2-1.6,'vano '+e.h,{fs:2.2,c:'#888'});
           }
           z+=e.h;
           if(z<o.z1-0.3) g.line(sl.y0,z,sl.y1,z,{w:0.3});
         });
-        if(z<o.z1-0.5) g.text(sl.y0+3.5,(z+o.z1)/2-1.6,'libero '+fmt(o.z1-z),{fs:2.2,c:'#888'});
+        if(z<o.z1-0.5) g.text(sl.y1-3.5,(z+o.z1)/2-1.6,'libero '+fmt(o.z1-z),{fs:2.2,c:'#888'});
       }
     });
     g.text(sl.y0+(sl.y1-sl.y0)/2,-7,sl.name,{fs:2.6,an:'middle',b:true});
     quoteH(g,-14,sl.y0,sl.y1,fmt(sl.y1-sl.y0));
   });
   g.rect(66,120,D-66,2.5,{w:0.3,f:'#efe7d6'});
-  g.text(D-4,124,'piano in legno',{fs:2.1,an:'end',c:'#888'});
+  g.text(D-4,124,'piano in legno',{fs:2.1,c:'#888'});
   quoteH(g,-22,0,D,fmt(D)+' · profondità nicchia');
   quoteH(g,-9,0,SLOTS[0].y0,fmt(SLOTS[0].y0));
-  g.text(0,-29,'Triangolo tratteggiato: il vertice indica il lato delle cerniere. Tratteggio fine: soffitto sul filo della parete destra (x 235).',{fs:2.2,c:THIN});
+  g.text(D,-29,'Triangolo tratteggiato: il vertice indica il lato delle cerniere. Tratteggio fine: soffitto sul filo della parete destra (x 235).',{fs:2.2,c:THIN});
   quoteV(g,-10,0,120,'120');
   quoteV(g,-18,0,under(XF),fmt(under(XF))+' intradosso trave');
   quoteV(g,D+16,0,ceilN(XF),fmt(ceilN(XF))+' soffitto a 180');
 }
 // --- PIANTA (u = y stanza, v = x stanza) ---
 function drawPianta(g,bx,base,k){
-  g.setT(bx,base,k);
-  g.text(0,250,'PIANTA · aperture e ingombri',{fs:3,b:true});
+  g.setT(bx+D*k,base,k,-k);   // stesso verso del prospetto
+  g.text(D,250,'PIANTA · aperture e ingombri',{fs:3,b:true});
   g.rect(0,0,D,W,{w:0.45});
   g.line(0,0,60,0,{w:1,c:ACC});
   g.text(30,-6,'porta finestra',{fs:2.2,an:'middle',c:ACC});
@@ -688,8 +694,8 @@ function drawSezione(g,sl,bx,base,k){
   g.text(100,276,'SEZIONE · '+sl.name,{fs:2.6,b:true});
   g.poly(pmax,{w:0.2,c:THIN,d:'2,1.5'});
   g.poly(pmin,{w:0.5});
-  g.text(W,pmin[pmin.length-1][1]-8,'soffitto più basso',{fs:2.1,an:'end',c:'#444'});
-  g.text(W,pmax[pmax.length-1][1]+4,'soffitto più alto',{fs:2.1,an:'end',c:THIN});
+  g.text(W,pmin[pmin.length-1][1]+5,'soffitto più basso',{fs:2.1,an:'end',c:'#444'});
+  g.text(W,pmax[pmax.length-1][1]+5,'soffitto più alto',{fs:2.1,an:'end',c:THIN});
   g.line(100,0,W,0,{w:0.6});
   g.line(W,0,W,pmax[pmax.length-1][1],{w:0.4});
   let tot=0;
@@ -734,11 +740,11 @@ function page1(g){
 function page2(g){
   frame(g,2,3,'Sezioni verticali e verifica delle aperture','1:30');
   const xs=[16,85,154,223], k=1/3;
-  SLOTS.forEach((sl,i)=>drawSezione(g,sl,xs[i],124,k));
+  [...SLOTS].reverse().forEach((sl,i)=>drawSezione(g,sl,xs[i],124,k));
   g.setT(0,PAGE.h,1);
   g.text(13,76,'Verifiche automatiche',{fs:3,b:true});
   const xs2=[14,83,152,221];
-  SLOTS.forEach((sl,i)=>{
+  [...SLOTS].reverse().forEach((sl,i)=>{
     const a=analyze(sl), lines=[{t:sl.name+' · '+fmt(sl.y0)+'→'+fmt(sl.y1)+' cm',b:true,c:'#111'}];
     a.res.forEach(r=>lines.push({t:'· '+r.msg,c:r.lv==='bad'?BAD:(r.lv==='warn'?'#8a6500':'#444')}));
     colText(g,xs2[i],70,lines,2.5,3.4,42);
@@ -843,6 +849,6 @@ $('#bPdf').onclick=savePDF;
 $('#bPrint').onclick=()=>window.print();
 addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#ov').hidden) $('#ov').hidden=true; });
 
-size(); renderAll();
+syncChips(); size(); renderAll();
 </script>
 </body></html>
