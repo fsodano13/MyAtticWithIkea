@@ -9,8 +9,9 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
 - **Vista 3D interattiva** (three.js) della stanza con falda, travi e soffitto reali rilevati a misura.
 - **Anta e contenuto indipendenti**: ogni telaio PLATSA può avere o no l'anta (con il lato
   cerniere), e separatamente si riempie con una pila di cassetti e vani in qualsiasi ordine
-  (es. 4 cassetti da 20 più 2 vani da 20). I ripiani nascono dalle divisioni fra i vani, anche
-  dietro un'anta, e la quota di ognuno viene calcolata e riportata nei disegni.
+  (es. 4 cassetti da 20 più 2 vani da 20). I ripiani nascono dalle divisioni fra i vani, e ogni
+  vano si può definire sia per altezza sia scrivendo direttamente la **quota da terra** del suo
+  cielo, cioè dove va il ripiano: i vani sopra scorrono di conseguenza.
 - **Tre tipi di elemento** nella pila: cassetto, vano a giorno e vano con **bastone appendiabiti**
   (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55). Per il bastone il tool
   calcola l'altezza utile sotto e dice se ci stanno capi lunghi, camicie e giacche, o niente.

@@ -63,6 +63,7 @@ select{font:500 13px var(--f-ui);padding:5px 8px;border:1px solid var(--line);bo
 .el{display:flex;align-items:center;gap:5px}
 .el .n{font:500 11.5px var(--f-num);color:var(--muted);width:14px;text-align:right;flex:none}
 .el select{padding:4px 6px;font-size:12.5px}
+.qt{width:58px;font:500 12.5px var(--f-num);padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg)}
 .el .gro{margin-left:auto;display:flex;gap:4px}
 .ib{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:7px;padding:2px 7px;cursor:pointer;font:500 12px var(--f-ui);line-height:1.5}
 .ib:hover{color:var(--fg);border-color:var(--accent)}
@@ -338,6 +339,7 @@ function renderTabs(){
 function opts(list,v){ const l=list.includes(v)?list:[v,...list].sort((a,b)=>a-b); return l.map(h=>`<option value="${h}" ${h===v?'selected':''}>${h}</option>`).join(''); }
 function modEditor(slot,m,i){
   const sizesH=slot.column?[40,60,120,180]:[120];
+  const z0=S[slot.id].slice(0,i).reduce((a,x)=>a+x.h,0);   // quota a terra della base del telaio
   const hSel = slot.column
     ? `<select data-act="h" data-i="${i}">${opts(sizesH,m.h)}</select>`
     : `<span class="num">120</span>`;
@@ -350,7 +352,11 @@ function modEditor(slot,m,i){
         <option value="v" ${e.t==='v'?'selected':''}>Vano</option>
         <option value="a" ${e.t==='a'?'selected':''}>Bastone</option></select>
       <select data-act="eh" data-i="${i}" data-j="${j}">${opts((e.t==='c'?H_CASS:H_VANO).filter(v=>v<=m.h),e.h)}</select>
-      <span class="vano num">${fmt(cumEl(m,j))}→${fmt(cumEl(m,j)+e.h)}</span>
+      ${e.t==='c'
+        ? `<span class="vano num">da ${fmt(z0+cumEl(m,j))} a ${fmt(z0+cumEl(m,j)+e.h)}</span>`
+        : `<span class="vano">da <span class="num">${fmt(z0+cumEl(m,j))}</span> a</span>
+           <input class="qt" type="number" min="${fmt(z0+cumEl(m,j)+5)}" max="${fmt(z0+cumEl(m,j)+m.h-(sumEl(m)-e.h))}" step="1" value="${fmt(z0+cumEl(m,j)+e.h)}"
+             data-act="eq" data-i="${i}" data-j="${j}" title="Quota del cielo del vano, in cm da terra">`}
       ${e.t==='c'?`<button class="ib ${e.op?'on':''}" data-act="eop" data-i="${i}" data-j="${j}" title="Sfila questo cassetto">${e.op?'Chiudi':'Sfila'}</button>`:''}
       <span class="gro">
         <button class="ib" data-act="eup" data-i="${i}" data-j="${j}" ${j===n-1?'disabled':''} aria-label="Sposta su">↑</button>
@@ -371,7 +377,7 @@ function modEditor(slot,m,i){
       <button class="btn" data-act="odtog" data-i="${i}" data-tog="${i}">${m.od?'Chiudi':'Apri'}</button></div>`:''}
     <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta: solo vani e bastoni, i cassetti non ci vanno':'a vista'}</span></div>
     <div class="fill">${bars}</div>
-    <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a quota <b>${sh.map(fmt).join(', ')}</b>`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
+    <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a <b>${sh.map(z=>fmt(z0+z)).join(', ')}</b> cm da terra`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
     <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
     <div class="row">
       ${m.door?'':`<button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>`}
@@ -393,7 +399,7 @@ function renderEditor(){
   html+=a.res.map(r=>`<div class="status ${r.lv}">${r.msg}</div>`).join('');
   $('#editor').innerHTML=html;
   $('#editor').querySelectorAll('[data-act]').forEach(el=>{
-    const ev = el.tagName==='SELECT' ? 'change' : (el.type==='range' ? 'input' : 'click');
+    const ev = (el.tagName==='SELECT'||el.type==='number') ? 'change' : (el.type==='range' ? 'input' : 'click');
     el.addEventListener(ev,()=>act(slot,el));
   });
 }
@@ -416,6 +422,12 @@ function act(slot,el){
   if(a==='h'){ m.h=+el.value; while(m.el.length&&sumEl(m)>m.h) m.el.pop(); }
   if(a==='etype'){ m.el[j].t=el.value; if(el.value!=='c') delete m.el[j].op; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
   if(a==='eh') m.el[j].h=+el.value;
+  if(a==='eq'){
+    // la quota da terra del cielo del vano: cambia l'altezza di questo vano, quelli sopra scorrono
+    const base=S[slot.id].slice(0,i).reduce((x,y)=>x+y.h,0)+cumEl(m,j);
+    const liberi=m.h-(sumEl(m)-m.el[j].h);   // quanto può crescere senza sfondare il telaio
+    m.el[j].h=Math.max(5,Math.min(liberi,Math.round(+el.value)-base));
+  }
   if(a==='edel') m.el.splice(j,1);
   if(a==='eup'&&j<m.el.length-1) m.el.splice(j+1,0,m.el.splice(j,1)[0]);
   if(a==='edn'&&j>0) m.el.splice(j-1,0,m.el.splice(j,1)[0]);
