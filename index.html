@@ -173,18 +173,18 @@ const SLOTS=[
   {id:'b4', short:'4', name:'Blocco 4', hint:'colonna, zona alta',  y0:6,   y1:66, column:true},
 ];
 const OLDID={b1:'c', b2:'b', b3:'a', b4:'col'};   // id delle versioni precedenti
-const H_CASS=[20,30,40];                                                  // altezze cassetto
-const H_VANO=[10,15,20,25,30,35,40,50,60,70,80,90,100,110,120,140,160,180]; // altezze vano
-const RAIL_Z=4;      // asse del bastone appendiabiti sotto il cielo del vano
-const RAIL_HOOK=1.2; // raggio del bastone: quello che la gruccia mangia in più
+const H_CASS=[20,30,40];   // altezze del frontale cassetto
+const T_SHELF=1.8;         // spessore del ripiano
+const RAIL_Z=4;            // quanto sta sotto al cielo un bastone, nelle vecchie configurazioni
+const RAIL_HOOK=1.2;       // raggio del bastone: quello che la gruccia mangia in più
 
 // ================= STATO =================
 const KEY='platsa_cfg_v3', KEYS_OLD=['platsa_cfg_v2','platsa_cfg_v1'];
 const DEFAULT={
-  b1:[{h:120,door:1,hinge:'L',el:[{t:'a',h:120}]}],
-  b2:[{h:120,door:1,hinge:'R',el:[{t:'v',h:40},{t:'v',h:40}]}],
-  b3:[{h:120,door:0,hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
-  b4:[{h:180,door:1,hinge:'R',el:[{t:'v',h:60},{t:'v',h:60}]},{h:40,door:1,hinge:'R',el:[]}],
+  b1:[{h:120,door:1,hinge:'L',el:[{t:'a',z:116}]}],
+  b2:[{h:120,door:1,hinge:'R',el:[{t:'r',z:40},{t:'r',z:80}]}],
+  b3:[{h:120,door:0,hinge:'R',el:[{t:'c',z:0,h:20},{t:'c',z:20,h:20},{t:'c',z:40,h:20},{t:'c',z:60,h:20},{t:'r',z:80},{t:'r',z:100}]}],
+  b4:[{h:180,door:1,hinge:'R',el:[{t:'r',z:60},{t:'r',z:120}]},{h:40,door:1,hinge:'R',el:[]}],
 };
 // v1 drawers:[20,30] · v2 type:'anta'|'comp' · v3 anta e contenuto indipendenti
 function migrate(o){
@@ -192,13 +192,19 @@ function migrate(o){
   for(const sl of SLOTS){
     out[sl.id]=((o&&(o[sl.id]||o[OLDID[sl.id]]))||[]).map(m=>{
       const base={h:+m.h,hinge:m.hinge||'R'};
+      // già nel formato a quota
+      if(Array.isArray(m.el)&&m.el.every(e=>typeof e.z==='number')&&m.el.length)
+        return {...base,door:m.door?1:0,el:m.el.map(e=>e.t==='c'?{t:'c',z:+e.z,h:+e.h}:{t:e.t==='a'?'a':'r',z:+e.z})
+          .filter(e=>!(e.t==='c'&&m.door))};
       // con l'anta i cassetti non ci stanno: diventano vani della stessa altezza
       const keep=(e,door)=>({t: e.t==='a'||e.rail ? 'a' : (e.t==='c'&&!door ? 'c' : 'v'), h:+e.h});
-      if(m.door!==undefined){ const d=m.door?1:0; return {...base,door:d,el:(m.el||[]).map(e=>keep(e,d))}; }
-      if(Array.isArray(m.el)){ const d=m.type==='anta'?1:0; return {...base,door:d,el:m.el.map(e=>keep(e,d))}; }
-      if(m.type==='cassetti') return {...base,door:0,el:(m.drawers||[]).map(d=>({t:'c',h:+d}))};
-      if(m.type==='giorno')   return {...base,door:0,el:[{t:'v',h:+m.h}]};
-      return {...base,door:1,el:[]};
+      let st;
+      if(m.door!==undefined){ const d=m.door?1:0; st={...base,door:d,el:(m.el||[]).map(e=>keep(e,d))}; }
+      else if(Array.isArray(m.el)){ const d=m.type==='anta'?1:0; st={...base,door:d,el:m.el.map(e=>keep(e,d))}; }
+      else if(m.type==='cassetti') st={...base,door:0,el:(m.drawers||[]).map(d=>({t:'c',h:+d}))};
+      else if(m.type==='giorno')   st={...base,door:0,el:[{t:'v',h:+m.h}]};
+      else st={...base,door:1,el:[]};
+      return {...st, el:stackToItems(st)};
     });
   }
   return out;
@@ -225,29 +231,63 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S,(k,v)=>(k==='od
 // ================= CONTROLLI DI COLLISIONE =================
 // cerniera R = verso il lato aperto (y minore) · L = verso il fondo (y maggiore)
 function hingeY(slot,m){ return m.hinge==='R'? slot.y0 : slot.y1; }
-function sumEl(m){ return (m.el||[]).reduce((a,e)=>a+e.h,0); }
-function freeEl(m){ return m.h-sumEl(m); }
-function topDrawer(m){ let z=0,t=null; for(const e of (m.el||[])){ z+=e.h; if(e.t==='c') t=z; } return t; }
-// bastoni appendiabiti: quota dell'asse dal fondo del telaio e altezza utile sotto
-// tipi di elemento: c = cassetto, v = vano a giorno, a = vano con bastone appendiabiti
-const isVano=e=>e.t!=='c';
-function railsOf(m){
-  const out=[]; let z=0;
-  (m.el||[]).forEach(e=>{ if(e.t==='a') out.push({z:z+e.h-RAIL_Z, drop:e.h-RAIL_Z-RAIL_HOOK}); z+=e.h; });
+// la vecchia pila di vani diventa: un ripiano sotto ogni vano che non parte dal fondo,
+// uno sotto lo spazio libero in cima, i bastoni alla loro quota e i cassetti alla loro base
+function stackToItems(m){
+  const out=[]; let z=0, n=(m.el||[]).length;
+  (m.el||[]).forEach((e,j)=>{
+    if(e.t==='c') out.push(e.op?{t:'c',z,h:+e.h,op:1}:{t:'c',z,h:+e.h});
+    else{
+      if(j>0) out.push({t:'r',z});
+      if(e.t==='a') out.push({t:'a',z:z+ +e.h-RAIL_Z});
+    }
+    z+=+e.h;
+  });
+  if(n&&m.h-z>0.5) out.push({t:'r',z});
   return out;
 }
+function topDrawer(m){ let z=0,t=null; for(const e of (m.el||[])){ z+=e.h; if(e.t==='c') t=z; } return t; }
+// bastoni appendiabiti: quota dell'asse dal fondo del telaio e altezza utile sotto
+// Contenuto del telaio: pezzi messi a quota, non vani impilati.
+//  r = ripiano, quota a cui si infila: l'asse occupa z ÷ z+1,8
+//  a = bastone appendiabiti, quota dell'asse
+//  c = cassetto, quota di base più l'altezza del frontale
+function els(m){ return m.el||[]; }
+function sortEl(m){ m.el.sort((a,b)=>a.z-b.z); }
+function shelves(m){ return els(m).filter(e=>e.t==='r'); }
+function rails(m){ return els(m).filter(e=>e.t==='a'); }
+function drawers(m){ return els(m).filter(e=>e.t==='c'); }
+function spanOf(e){ return e.t==='c' ? [e.z,e.z+e.h] : (e.t==='r' ? [e.z,e.z+T_SHELF] : [e.z-RAIL_HOOK,e.z+RAIL_HOOK]); }
+function solidSpans(m){ return els(m).filter(e=>e.t!=='a').map(spanOf).sort((a,b)=>a[0]-b[0]); }
+function topDrawer(m){ const d=drawers(m); return d.length? Math.max(...d.map(e=>e.z+e.h)) : null; }
+// i vani liberi sono quello che resta fra un pezzo e l'altro
+function gaps(m){
+  const out=[]; let z=0;
+  solidSpans(m).forEach(sp=>{ if(sp[0]-z>1) out.push([z,sp[0]]); z=Math.max(z,sp[1]); });
+  if(m.h-z>1) out.push([z,m.h]);
+  return out;
+}
+// altezza utile sotto un bastone: fino al primo pezzo che trova sotto
+function railDrop(m,e){
+  let base=0;
+  solidSpans(m).forEach(sp=>{ if(sp[1]<=e.z+0.01 && sp[1]>base) base=sp[1]; });
+  return e.z-base-RAIL_HOOK;
+}
+function elName(e){ return e.t==='c'?('cassetto '+e.h):(e.t==='r'?'ripiano':'bastone'); }
+function conflicts(m){
+  const o=els(m), out=[];
+  for(let i=0;i<o.length;i++) for(let j=i+1;j<o.length;j++){
+    const a=spanOf(o[i]), b=spanOf(o[j]);
+    if(a[0]<b[1]-0.01 && b[0]<a[1]-0.01) out.push([o[i],o[j]]);
+  }
+  return out;
+}
+function outOfFrame(m){ return els(m).filter(e=>{ const sp=spanOf(e); return sp[0]<-0.01||sp[1]>m.h+0.01; }); }
 function railUse(d){
   return d<60?['bad','troppo poco per appendere']
        : d<100?['warn','solo capi corti o piegati sulla gruccia']
        : d<150?['ok','camicie e giacche, circa 15-20 capi']
        :       ['ok','anche cappotti e capi lunghi'];
-}
-// un ripiano sta sotto ogni vano che non parte dal fondo del telaio, e sotto lo spazio libero in cima
-function shelfZs(m){
-  const out=[]; let z=0;
-  (m.el||[]).forEach((e,j)=>{ if(j>0&&isVano(e)) out.push(z); z+=e.h; });
-  if((m.el||[]).length && freeEl(m)>0.5) out.push(z);
-  return out;
 }
 function checkDoor(slot,m,ztop){
   const h=hingeY(slot,m), s=(m.hinge==='R')?1:-1;
@@ -302,30 +342,35 @@ function analyze(slot){
   const top=minCeil(slot)-total;
   res.push({k:'top', lv:level(top), msg: top<0?`Troppo alta: supera il soffitto di ${fmt(-top)} cm`:`Spazio sopra il mobile: ${fmt(top)} cm`});
   st.forEach((o,i)=>{
-    const m=o.m, s=sumEl(m);
+    const m=o.m;
     if(m.door){
       const w=checkDoor(slot,m,o.z1), lv=level(w.c);
       res.push({k:'d'+i, lv, msg: lv==='bad'
         ? `Anta ${m.h}: sbatte di ${fmt(-w.c)} cm, si apre fino a ${maxDoorAngle(slot,m,o.z1)}°`
         : `Anta ${m.h}: margine minimo ${fmt(w.c)} cm a ${w.a}°, apre tutta`});
     }
-    if(s>m.h) res.push({k:'c'+i, lv:'bad', msg:`Interno: ${fmt(s)} cm di elementi in un telaio da ${m.h}`});
-    else {
-      const td=topDrawer(m);
-      if(td!==null){
-        const w=checkDrawer(slot,o.z0+td), lv=level(w);
-        res.push({k:'c'+i, lv, msg: lv==='bad'
-          ? `Cassetto più alto (a ${fmt(o.z0+td)} cm): sbatte di ${fmt(-w)} cm da aperto`
-          : `Cassetto più alto (a ${fmt(o.z0+td)} cm): margine ${fmt(w)} cm da aperto`});
-      }
-      const sh=shelfZs(m);
-      if(sh.length) res.push({k:'s'+i, lv:'ok', msg:`${sh.length} ripian${sh.length>1?'i':'o'} a quota ${sh.map(z=>fmt(o.z0+z)).join(', ')} cm`});
-      railsOf(m).forEach((rl,k)=>{
-        const [lv,txt]=railUse(rl.drop);
-        res.push({k:'r'+i+'_'+k, lv, msg:`Bastone appendiabiti a ${fmt(o.z0+rl.z)} cm: ${fmt(rl.drop)} cm utili sotto, ${txt}`});
-      });
-      if(m.el.length && m.h-s>0.5) res.push({k:'f'+i, lv:'ok', msg:`Spazio libero in cima al telaio: ${fmt(m.h-s)} cm`});
+    const of=outOfFrame(m), cf=conflicts(m);
+    if(of.length) res.push({k:'o'+i, lv:'bad',
+      msg:`Fuori dal telaio da ${m.h}: ${of.map(elName).join(', ')}`});
+    if(cf.length) res.push({k:'v'+i, lv:'bad',
+      msg:`Si sovrappongono: ${cf[0].map(elName).join(' e ')}${cf.length>1?` (e altri ${cf.length-1})`:''}`});
+    const td=topDrawer(m);
+    if(td!==null){
+      const w=checkDrawer(slot,o.z0+td), lv=level(w);
+      res.push({k:'c'+i, lv, msg: lv==='bad'
+        ? `Cassetto più alto (a ${fmt(o.z0+td)} cm): sbatte di ${fmt(-w)} cm da aperto`
+        : `Cassetto più alto (a ${fmt(o.z0+td)} cm): margine ${fmt(w)} cm da aperto`});
     }
+    const sh=shelves(m);
+    if(sh.length) res.push({k:'s'+i, lv:'ok',
+      msg:`${sh.length} ripian${sh.length>1?'i':'o'} a ${sh.map(e=>fmt(o.z0+e.z)).join(', ')} cm da terra`});
+    rails(m).forEach((e,k)=>{
+      const d=railDrop(m,e), [lv,txt]=railUse(d);
+      res.push({k:'r'+i+'_'+k, lv, msg:`Bastone a ${fmt(o.z0+e.z)} cm: ${fmt(d)} cm utili sotto, ${txt}`});
+    });
+    const gp=gaps(m);
+    if(gp.length) res.push({k:'g'+i, lv:'ok',
+      msg:`Vani liberi: ${gp.map(x=>`da ${fmt(o.z0+x[0])} a ${fmt(o.z0+x[1])}`).join(' · ')}`});
   });
   res.forEach(r=>{ if(r.lv==='bad') worst='bad'; else if(r.lv==='warn'&&worst!=='bad') worst='warn'; });
   return {res,worst,total};
@@ -335,8 +380,8 @@ function analyze(slot){
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function modLabel(m){
-  const c=m.el.filter(e=>e.t==='c').length, v=m.el.filter(e=>e.t==='v').length;
-  return m.h+(m.door?'A':'')+(c?'·'+c+'c':'')+(v?'·'+v+'v':'');
+  const c=drawers(m).length, r=shelves(m).length, a=rails(m).length;
+  return m.h+(m.door?'A':'')+(c?'·'+c+'c':'')+(r?'·'+r+'r':'')+(a?'·'+a+'b':'');
 }
 function renderTabs(){
   $('#tabs').innerHTML=SLOTS.map(sl=>{
@@ -352,26 +397,30 @@ function modEditor(slot,m,i){
   const hSel = slot.column
     ? `<select data-act="h" data-i="${i}">${opts(sizesH,m.h)}</select>`
     : `<span class="num">120</span>`;
-  const n=m.el.length, free=freeEl(m), over=free<0, sh=shelfZs(m);
-  const bars=m.el.map(e=>`<i class="${over?'over':e.t}" style="width:${(e.h/m.h*100).toFixed(2)}%"></i>`).join('');
-  const rows=m.el.map((e,j)=>({e,j})).reverse().map(({e,j})=>`<div class="el">
-      <span class="n">${j+1}</span>
+  const sh=shelves(m), ra=rails(m), gp=gaps(m), bad=outOfFrame(m).length||conflicts(m).length;
+  // striscia che rappresenta il telaio dal basso (sinistra) all'alto (destra)
+  const segs=[]; let zb=0;
+  els(m).slice().sort((a,b)=>spanOf(a)[0]-spanOf(b)[0]).forEach(e=>{
+    const sp=spanOf(e);
+    if(sp[0]>zb) segs.push(['g',sp[0]-zb]);
+    segs.push([e.t,Math.max(sp[1]-sp[0],0.8)]); zb=Math.max(zb,sp[1]);
+  });
+  if(m.h>zb) segs.push(['g',m.h-zb]);
+  const bars=segs.map(([t,w])=>`<i class="${bad?'over':t}" style="width:${(w/m.h*100).toFixed(2)}%"></i>`).join('');
+  const rows=m.el.map((e,j)=>({e,j})).sort((a,b)=>b.e.z-a.e.z).map(({e,j})=>`<div class="el">
       <select data-act="etype" data-i="${i}" data-j="${j}">
         ${m.door?'':`<option value="c" ${e.t==='c'?'selected':''}>Cassetto</option>`}
-        <option value="v" ${e.t==='v'?'selected':''}>Vano</option>
+        <option value="r" ${e.t==='r'?'selected':''}>Ripiano</option>
         <option value="a" ${e.t==='a'?'selected':''}>Bastone</option></select>
-      <select data-act="eh" data-i="${i}" data-j="${j}">${opts((e.t==='c'?H_CASS:H_VANO).filter(v=>v<=m.h),e.h)}</select>
-      ${e.t==='c'
-        ? `<span class="vano num">da ${fmt(z0+cumEl(m,j))} a ${fmt(z0+cumEl(m,j)+e.h)}</span>`
-        : `<span class="vano">da <span class="num">${fmt(z0+cumEl(m,j))}</span> a</span>
-           <input class="qt" type="number" min="${fmt(z0+cumEl(m,j)+5)}" max="${fmt(z0+cumEl(m,j)+m.h-(sumEl(m)-e.h))}" step="1" value="${fmt(z0+cumEl(m,j)+e.h)}"
-             data-act="eq" data-i="${i}" data-j="${j}" title="Quota del cielo del vano, in cm da terra">`}
-      ${e.t==='c'?`<button class="ib ${e.op?'on':''}" data-act="eop" data-i="${i}" data-j="${j}" title="Sfila questo cassetto">${e.op?'Chiudi':'Sfila'}</button>`:''}
-      <span class="gro">
-        <button class="ib" data-act="eup" data-i="${i}" data-j="${j}" ${j===n-1?'disabled':''} aria-label="Sposta su">↑</button>
-        <button class="ib" data-act="edn" data-i="${i}" data-j="${j}" ${j===0?'disabled':''} aria-label="Sposta giù">↓</button>
-        <button class="ib x" data-act="edel" data-i="${i}" data-j="${j}" aria-label="Togli">✕</button>
-      </span></div>`).join('');
+      <span class="vano">a</span>
+      <input class="qt" type="number" min="0" max="${fmt(z0+m.h)}" step="1" value="${fmt(z0+e.z)}"
+        data-act="eq" data-i="${i}" data-j="${j}" title="${e.t==='c'?'Quota di base del cassetto':(e.t==='r'?'Quota a cui si infila il ripiano, spesso 1,8':'Quota dell\u2019asse del bastone')}, in cm da terra">
+      <span class="vano">cm</span>
+      ${e.t==='c'?`<select data-act="eh" data-i="${i}" data-j="${j}">${opts(H_CASS.filter(v=>v<=m.h),e.h)}</select>
+        <button class="ib ${e.op?'on':''}" data-act="eop" data-i="${i}" data-j="${j}" title="Sfila questo cassetto">${e.op?'Chiudi':'Sfila'}</button>`:''}
+      ${e.t==='a'?`<span class="vano num">${fmt(railDrop(m,e))} utili</span>`:''}
+      <span class="gro"><button class="ib x" data-act="edel" data-i="${i}" data-j="${j}" aria-label="Togli">✕</button></span>
+    </div>`).join('');
   const body=`<div class="row"><label>Anta</label><div class="seg">
       <button data-act="door" data-v="1" data-i="${i}" class="${m.door?'on':''}">Con anta</button>
       <button data-act="door" data-v="0" data-i="${i}" class="${m.door?'':'on'}">Senza</button></div>
@@ -386,19 +435,18 @@ function modEditor(slot,m,i){
       <button class="btn" data-act="odtog" data-i="${i}" data-tog="${i}">${m.od?'Chiudi':'Apri'}</button></div>`:''}
     <div class="row" style="margin-top:2px"><b style="font-size:12.5px">Interno</b><span class="vano">${m.door?'dietro l\u2019anta: solo vani e bastoni, i cassetti non ci vanno':'a vista'}</span></div>
     <div class="fill">${bars}</div>
-    <div class="vano">${over?`<b style="color:var(--bad)">${fmt(-free)} cm di troppo</b>`:`Libero in cima: <b>${fmt(free)} cm</b>`}${sh.length?` · ripian${sh.length>1?'i':'o'} a <b>${sh.map(z=>fmt(z0+z)).join(', ')}</b> cm da terra`:''}${railsOf(m).length?` · <b>${railsOf(m).length}</b> bastone appendiabiti`:''}</div>
-    <div class="stack">${rows||`<span class="vano">${m.door?'Vano unico dietro l\u2019anta: aggiungi un vano per creare un ripiano.':'Telaio vuoto: aggiungi cassetti o vani.'}</span>`}</div>
+    <div class="vano">${gp.length?`Vani liberi: <b>${gp.map(x=>fmt(z0+x[0])+'→'+fmt(z0+x[1])).join(' · ')}</b>`:'Telaio pieno'}${sh.length?` · ${sh.length} ripian${sh.length>1?'i':'o'}`:''}${ra.length?` · ${ra.length} baston${ra.length>1?'i':'e'}`:''}</div>
+    <div class="stack">${rows||`<span class="vano">${m.door?'Dietro l\u2019anta non c\u2019è niente: aggiungi un ripiano o un bastone.':'Telaio vuoto: aggiungi un ripiano, un bastone o un cassetto.'}</span>`}</div>
     <div class="row">
-      ${m.door?'':`<button class="btn" data-act="addc" data-i="${i}" ${free<20?'disabled':''}>+ Cassetto</button>`}
-      <button class="btn" data-act="addv" data-i="${i}" ${free<10?'disabled':''}>+ Vano</button>
-      ${free>=10?`<button class="btn" data-act="fillv" data-i="${i}" title="Aggiunge un vano alto quanto lo spazio ancora libero, così il telaio non resta con avanzi">Riempi i ${fmt(free)} liberi</button>`:''}
-      ${n?`<button class="btn x" data-act="eclear" data-i="${i}">Svuota</button>`:''}
+      <button class="btn" data-act="addr" data-i="${i}">+ Ripiano</button>
+      <button class="btn" data-act="adda" data-i="${i}">+ Bastone</button>
+      ${m.door?'':`<button class="btn" data-act="addc" data-i="${i}">+ Cassetto</button>`}
+      ${m.el.length?`<button class="btn x" data-act="eclear" data-i="${i}">Svuota</button>`:''}
     </div>`;
   return `<div class="mod"><div class="modhead"><b>${slot.column?`Modulo ${i+1} (dal basso) · h `:'Telaio Platsa h '}${hSel}</b>
       ${slot.column&&S[slot.id].length>1?`<button class="btn x" data-act="mdel" data-i="${i}">Togli modulo</button>`:''}</div>
     ${body}</div>`;
 }
-function cumEl(m,j){ let z=0; for(let k=0;k<j;k++) z+=m.el[k].h; return z; }
 function renderEditor(){
   const slot=SLOTS.find(s=>s.id===cur), a=analyze(slot);
   let html=`<h2>${slot.name} <span class="sub">· ${slot.hint}</span></h2>
@@ -425,40 +473,51 @@ function act(slot,el){
   if(a==='eop'){ m.el[j].op=m.el[j].op?0:1; syncAll(); build3D(); renderEditor(); return; }
   if(a==='door'){
     m.door=+el.dataset.v;
-    if(m.door) m.el.forEach(e=>{ if(e.t==='c'){ e.t='v'; delete e.op; } });  // i cassetti diventano vani
+    if(m.door) m.el=m.el.filter(e=>e.t!=='c');   // con l'anta i cassetti non ci vanno
   }
   if(a==='hinge') m.hinge=el.dataset.v;
-  if(a==='h'){ m.h=+el.value; while(m.el.length&&sumEl(m)>m.h) m.el.pop(); }
-  if(a==='etype'){ m.el[j].t=el.value; if(el.value!=='c') delete m.el[j].op; const L=el.value==='c'?H_CASS:H_VANO; if(!L.includes(m.el[j].h)) m.el[j].h=L.reduce((p,v)=>Math.abs(v-m.el[j].h)<Math.abs(p-m.el[j].h)?v:p); }
-  if(a==='eh') m.el[j].h=+el.value;
+  if(a==='h'){ m.h=+el.value; m.el=m.el.filter(e=>spanOf(e)[1]<=m.h+0.01); }
+  if(a==='etype'){
+    const e=m.el[j]; e.t=el.value;
+    if(e.t==='c'){ if(!e.h) e.h=20; e.z=Math.max(0,Math.min(e.z,m.h-e.h)); }
+    else if(e.t==='r'){ delete e.h; delete e.op; e.z=Math.max(0,Math.min(e.z,m.h-T_SHELF)); }
+    else { delete e.h; delete e.op; e.z=Math.max(RAIL_HOOK,Math.min(e.z,m.h)); }
+  }
+  if(a==='eh'){ m.el[j].h=+el.value; m.el[j].z=Math.max(0,Math.min(m.el[j].z,m.h-m.el[j].h)); }
   if(a==='eq'){
-    // la quota da terra del cielo del vano: cambia l'altezza di questo vano, quelli sopra scorrono
-    const base=S[slot.id].slice(0,i).reduce((x,y)=>x+y.h,0)+cumEl(m,j);
-    const liberi=m.h-(sumEl(m)-m.el[j].h);   // quanto può crescere senza sfondare il telaio
-    m.el[j].h=Math.max(5,Math.min(liberi,Math.round(+el.value)-base));
+    // quota da terra del pezzo: ripiano = piano d'appoggio, bastone = asse, cassetto = base
+    const e=m.el[j], base=S[slot.id].slice(0,i).reduce((x,y)=>x+y.h,0);
+    const z=Math.round(+el.value)-base;
+    e.z = e.t==='c' ? Math.max(0,Math.min(z,m.h-e.h))
+        : e.t==='r' ? Math.max(0,Math.min(z,m.h-T_SHELF))
+        : Math.max(RAIL_HOOK,Math.min(z,m.h));
+    sortEl(m);
   }
   if(a==='edel') m.el.splice(j,1);
-  if(a==='eup'&&j<m.el.length-1) m.el.splice(j+1,0,m.el.splice(j,1)[0]);
-  if(a==='edn'&&j>0) m.el.splice(j-1,0,m.el.splice(j,1)[0]);
-  if(a==='addc') m.el.push({t:'c',h:20});
-  if(a==='addv') m.el.push({t:'v',h:Math.max(10,Math.min(20,freeEl(m)))});
-  if(a==='fillv') m.el.push({t:'v',h:freeEl(m)});
+  // i pezzi nuovi vanno in mezzo al vano libero più grande, dove servono quasi sempre
+  if(a==='addr'||a==='adda'||a==='addc'){
+    const g=gaps(m).sort((x,y)=>(y[1]-y[0])-(x[1]-x[0]))[0]||[0,m.h];
+    if(a==='addc') m.el.push({t:'c',z:Math.max(0,Math.min(g[0],m.h-20)),h:20});
+    else if(a==='adda') m.el.push({t:'a',z:Math.max(RAIL_HOOK,Math.min(g[1]-RAIL_Z,m.h))});
+    else m.el.push({t:'r',z:Math.max(0,Math.min(Math.round((g[0]+g[1])/2),m.h-T_SHELF))});
+    sortEl(m);
+  }
   if(a==='eclear') m.el=[];
   if(a==='mdel') mods.splice(i,1);
   if(a==='madd') mods.push({h:40,door:1,hinge:'R',el:[]});
   save(); renderAll();
 }
 function bom(){
-  const telai={}, ante={}, cass={}, vani={}; let ripiani=0, liberi=0, aste=0;
+  const telai={}, ante={}, cass={}; let ripiani=0, liberi=0, aste=0;
   SLOTS.forEach(sl=>S[sl.id].forEach(m=>{
     telai[m.h]=(telai[m.h]||0)+1;
     if(m.door) ante[m.h]=(ante[m.h]||0)+1;
-    m.el.forEach(e=>{ if(e.t==='c') cass[e.h]=(cass[e.h]||0)+1; else vani[e.h]=(vani[e.h]||0)+1; });
-    ripiani+=shelfZs(m).length;
-    aste+=railsOf(m).length;
-    if(freeEl(m)>0.5) liberi++;
+    drawers(m).forEach(e=>{ cass[e.h]=(cass[e.h]||0)+1; });
+    ripiani+=shelves(m).length;
+    aste+=rails(m).length;
+    liberi+=gaps(m).length;
   }));
-  return {telai,ante,cass,vani,ripiani,liberi,aste};
+  return {telai,ante,cass,ripiani,liberi,aste};
 }
 function renderSum(){
   const b=bom();
@@ -540,30 +599,27 @@ function build3D(){
       const td=topDrawer(m);
       let z=o.z0;
       m.el.forEach((el,ej)=>{
-        if(el.h<=0) return;
         if(el.t==='c'){
           // ogni cassetto si sfila per conto suo: gruppo a parte, cliccabile
           const dg=new THREE.Group(); dg.userData={sid:sl.id,mi:i,ej}; mg.add(dg);
-          const ext=el.op?EXT*0.9:0;
-          const isTop=(td!==null&&Math.abs(z+el.h-(o.z0+td))<0.01);
+          const ext=el.op?EXT*0.9:0, zb=o.z0+el.z;
+          const isTop=(td!==null&&Math.abs(el.z+el.h-td)<0.01);
           const col=(lvlC==='bad'&&isTop)?COLORS.bad:COLORS.front;
-          boxR(dg,XF-T_FR-ext,XF-ext,sl.y0+0.3,sl.y1-0.3,z+0.3,z+el.h-0.3,col);
-          if(ext>0.5) boxR(dg,XF-ext,XF,sl.y0+2,sl.y1-2,z+1,z+el.h-6,COLORS.box);
-          boxR(dg,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,z+el.h-7,z+el.h-5,COLORS.handle);
-        } else if(!m.door){
-          boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.6,z+el.h-0.6,COLORS.open);
+          boxR(dg,XF-T_FR-ext,XF-ext,sl.y0+0.3,sl.y1-0.3,zb+0.3,zb+el.h-0.3,col);
+          if(ext>0.5) boxR(dg,XF-ext,XF,sl.y0+2,sl.y1-2,zb+1,zb+el.h-6,COLORS.box);
+          boxR(dg,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,zb+el.h-7,zb+el.h-5,COLORS.handle);
+        } else if(el.t==='r'){
+          boxR(mg,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+el.z,o.z0+el.z+T_SHELF,COLORS.shelf);
+        } else {
+          const len=sl.y1-sl.y0-4;
+          const gg=new THREE.CylinderGeometry(RAIL_HOOK,RAIL_HOOK,len,10);
+          const me=new THREE.Mesh(gg,mat(COLORS.rail));
+          me.position.copy(P(XF+DEPTH/2,(sl.y0+sl.y1)/2,o.z0+el.z));
+          me.rotation.x=Math.PI/2; mg.add(me);
         }
-        z+=el.h;
       });
-      if(!m.door&&z<o.z1-0.5) boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,z+0.8,o.z1-0.8,COLORS.open);
-      shelfZs(m).forEach(sz=>boxR(mg,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+sz-1.8,o.z0+sz,COLORS.shelf));
-      railsOf(m).forEach(rl=>{
-        const len=sl.y1-sl.y0-4;
-        const gg=new THREE.CylinderGeometry(RAIL_HOOK,RAIL_HOOK,len,10);
-        const me=new THREE.Mesh(gg,mat(COLORS.rail));
-        me.position.copy(P(XF+DEPTH/2,(sl.y0+sl.y1)/2,o.z0+rl.z));
-        me.rotation.x=Math.PI/2; mg.add(me);
-      });
+      // i vani liberi, visibili solo se non c'è l'anta
+      if(!m.door) gaps(m).forEach(gp=>boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,o.z0+gp[0]+0.6,o.z0+gp[1]-0.6,COLORS.open));
       if(m.door){
         const h=hingeY(sl,m), sg=(m.hinge==='R')?1:-1;
         const piv=new THREE.Group(); piv.userData={sid:sl.id,mi:i,door:1}; piv.position.copy(P(XF,h,o.z0)); mg.add(piv);
@@ -781,32 +837,23 @@ function drawProspetto(g,bx,base,k){
       const m=o.m;
       g.rect(sl.y0,o.z0,w,m.h,{w:0.45});
       const hid=!!m.door, cc=hid?'#9a9a9a':INK, dd=hid?'1.4,1.1':undefined;
-      let z=o.z0;
       m.el.forEach(e=>{
-        if(e.h<=0) return;
+        const zb=o.z0+e.z;
         if(e.t==='c'){
-          g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:hid?0.18:0.25,c:cc,d:dd,f:hid?null:'#f4f4f4'});
-          if(!hid) g.line(sl.y0+w/2-9,z+e.h-5,sl.y0+w/2+9,z+e.h-5,{w:0.55,c:'#555'});
-          g.text(sl.y1-3.5,z+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:'#333'});
+          g.rect(sl.y0+1.2,zb+1,w-2.4,e.h-2,{w:hid?0.18:0.25,c:cc,d:dd,f:hid?null:'#f4f4f4'});
+          if(!hid) g.line(sl.y0+w/2-9,zb+e.h-5,sl.y0+w/2+9,zb+e.h-5,{w:0.55,c:'#555'});
+          g.text(sl.y1-3.5,zb+e.h/2-1.6,'cassetto '+e.h,{fs:2.2,c:hid?'#999':'#333'});
+        } else if(e.t==='r'){
+          g.line(sl.y0,zb,sl.y1,zb,{w:hid?0.22:0.32,c:cc,d:dd});
+          g.text(sl.y1-3.5,zb+1.5,'ripiano '+fmt(zb),{fs:2.1,c:hid?'#999':'#777'});
         } else {
-          if(!hid){
-            g.rect(sl.y0+1.2,z+1,w-2.4,e.h-2,{w:0.2,c:'#aaa',d:'1.2,1'});
-            g.text(sl.y1-3.5,z+e.h/2-1.6,(e.t==='a'?'vano appendiabiti ':'vano ')+e.h,{fs:2.2,c:'#888'});
-          }
-          if(e.t==='a'){
-            const rz=z+e.h-RAIL_Z, rc=hid?'#8a8a8a':'#555';
-            g.line(sl.y0+4,rz,sl.y1-4,rz,{w:0.7,c:rc,d:dd});
-            g.dot(sl.y0+4,rz,0.55,rc); g.dot(sl.y1-4,rz,0.55,rc);
-            g.text(sl.y1-3.5,rz-5,'bastone · '+fmt(e.h-RAIL_Z-RAIL_HOOK)+' utili',{fs:2.1,c:rc});
-          }
+          const rc=hid?'#8a8a8a':'#555';
+          g.line(sl.y0+4,zb,sl.y1-4,zb,{w:0.7,c:rc,d:dd});
+          g.dot(sl.y0+4,zb,0.55,rc); g.dot(sl.y1-4,zb,0.55,rc);
+          g.text(sl.y1-3.5,zb-5,'bastone · '+fmt(railDrop(m,e))+' utili',{fs:2.1,c:rc});
         }
-        z+=e.h;
       });
-      shelfZs(m).forEach(sz=>{
-        g.line(sl.y0,o.z0+sz,sl.y1,o.z0+sz,{w:hid?0.22:0.32,c:cc,d:dd});
-        if(hid) g.text(sl.y1-3.5,o.z0+sz+1.5,'ripiano '+fmt(o.z0+sz),{fs:2.1,c:'#999'});
-      });
-      if(!hid&&z<o.z1-0.5) g.text(sl.y1-3.5,(z+o.z1)/2-1.6,'libero '+fmt(o.z1-z),{fs:2.2,c:'#888'});
+      if(!hid) gaps(m).forEach(gp=>{ if(gp[1]-gp[0]>12) g.text(sl.y1-3.5,o.z0+(gp[0]+gp[1])/2-1.6,'vano '+fmt(gp[1]-gp[0]),{fs:2.2,c:'#888'}); });
       if(m.door){
         const uh=hingeY(sl,m), uo=(uh===sl.y0)?sl.y1:sl.y0, mid=(o.z0+o.z1)/2;
         g.line(uo,o.z0+1.5,uh,mid,{w:0.15,c:THIN,d:'1.6,1.2'});
@@ -889,11 +936,12 @@ function drawSezione(g,sl,bx,base,k){
   stacks(sl).forEach(o=>{
     const m=o.m; tot=Math.max(tot,o.z1);
     g.rect(XF,o.z0,DEPTH,m.h,{w:0.45,f:'#f2f2f2'});
-    shelfZs(m).forEach(sz=>g.line(XF,o.z0+sz,W,o.z0+sz,{w:0.25,c:'#888'}));
-    railsOf(m).forEach(rl=>{
-      g.dot(XF+DEPTH/2,o.z0+rl.z,0.8,'#555');
-      g.line(XF+DEPTH/2,o.z0+rl.z-1,XF+DEPTH/2,o.z0+rl.z-rl.drop,{w:0.15,c:'#aaa',d:'1,1.2'});
-      g.text(XF+DEPTH/2-2,o.z0+rl.z-rl.drop/2,fmt(rl.drop)+' utili',{fs:2,an:'middle',c:'#888',rot:1});
+    shelves(m).forEach(e=>g.line(XF,o.z0+e.z,W,o.z0+e.z,{w:0.25,c:'#888'}));
+    rails(m).forEach(e=>{
+      const d=railDrop(m,e);
+      g.dot(XF+DEPTH/2,o.z0+e.z,0.8,'#555');
+      g.line(XF+DEPTH/2,o.z0+e.z-1,XF+DEPTH/2,o.z0+e.z-d,{w:0.15,c:'#aaa',d:'1,1.2'});
+      g.text(XF+DEPTH/2-2,o.z0+e.z-d/2,fmt(d)+' utili',{fs:2,an:'middle',c:'#888',rot:1});
     });
     const td=topDrawer(m);
     if(td!==null){
@@ -934,14 +982,11 @@ function modDesc(m,short){
   if(m.door) q.push('anta, cerniere '+(m.hinge==='R'
     ? (short?'a destra':'a destra (verso il lato aperto)')
     : (short?'a sinistra':'a sinistra (verso il fondo)')));
-  const c=m.el.filter(e=>e.t==='c'), v=m.el.filter(e=>e.t==='v'), sh=shelfZs(m);
+  const c=drawers(m), sh=shelves(m), rl=rails(m);
   if(c.length) q.push(c.length+(c.length>1?' cassetti ':' cassetto ')+c.map(e=>e.h).join('+'));
-  if(sh.length) q.push(sh.length+(sh.length>1?' ripiani a ':' ripiano a ')+sh.map(fmt).join(', '));
-  else if(v.length) q.push(v.length+(v.length>1?' vani ':' vano ')+v.map(e=>e.h).join('+'));
-  const rl=railsOf(m);
-  if(rl.length) q.push(rl.length+(rl.length>1?' bastoni appendiabiti':' bastone appendiabiti')+(short?'':' ('+rl.map(r=>fmt(r.drop)+' cm utili').join(', ')+')'));
-  const f=freeEl(m);
-  return 'telaio '+m.h+' · '+(q.join(' · ')||'vuoto, nessun frontale')+(!short&&m.el.length&&f>0.5?' · libero in cima '+fmt(f):'');
+  if(sh.length) q.push(sh.length+(sh.length>1?' ripiani a ':' ripiano a ')+sh.map(e=>fmt(e.z)).join(', '));
+  if(rl.length) q.push(rl.length+(rl.length>1?' bastoni a ':' bastone a ')+rl.map(e=>fmt(e.z)).join(', ')+(short?'':' ('+rl.map(e=>fmt(railDrop(m,e))+' cm utili').join(', ')+')'));
+  return 'telaio '+m.h+' · '+(q.join(' · ')||'vuoto');
 }
 function bomLines(){
   const b=bom(), L=[];
@@ -1013,12 +1058,12 @@ function pageListe(g,n,tot){
     stacks(sl).forEach(o=>{
       const m=o.m;
       C.push({t:modDesc(m)+' (quota '+fmt(o.z0)+'→'+fmt(o.z1)+')'});
-      let z=o.z0;
-      m.el.forEach((e,j)=>{
-        C.push({t:'  '+(j+1)+'. '+(e.t==='c'?'cassetto':(e.t==='a'?'vano appendiabiti':'vano'))+' '+e.h+' · da '+fmt(z)+' a '+fmt(z+e.h)+(e.t==='a'?' · bastone a '+fmt(z+e.h-RAIL_Z):''),c:'#555'});
-        z+=e.h;
+      m.el.slice().sort((x,y)=>x.z-y.z).forEach(e=>{
+        C.push({t: e.t==='c' ? `  cassetto ${e.h} · da ${fmt(o.z0+e.z)} a ${fmt(o.z0+e.z+e.h)}`
+               : e.t==='r' ? `  ripiano · piano a ${fmt(o.z0+e.z)}`
+               : `  bastone · asse a ${fmt(o.z0+e.z)}, ${fmt(railDrop(m,e))} cm utili sotto`, c:'#555'});
       });
-      if(m.el.length&&o.z1-z>0.5) C.push({t:'  spazio libero '+fmt(o.z1-z)+' · da '+fmt(z)+' a '+fmt(o.z1),c:'#555'});
+      gaps(m).forEach(gp=>C.push({t:`  vano libero · da ${fmt(o.z0+gp[0])} a ${fmt(o.z0+gp[1])}`,c:'#888'}));
     });
     C.push({t:' '});
   });
@@ -1040,6 +1085,7 @@ function pageListe(g,n,tot){
     {t:'Corsa cassetti ipotizzata 50 cm.'},
     {t:'Bastone HJÄLPA 4 cm sotto il cielo del vano; altezza utile misurata sotto il bastone.'},
     {t:'Un telaio con anta porta solo ripiani e bastone: i cassetti vanno nei telai a vista.'},
+    {t:'Quote da terra: il ripiano (spesso 1,8) e il cassetto si quotano alla base, il bastone all\u2019asse.'},
     {t:'Piano sopra i blocchi bassi: elemento top SMÅSTAD 60 × 55 × 2, uno per blocco. In alternativa SPILDRA 60 × 56,8 × 3.'},
     {t:'Sotto il bastone: oltre 150 cm per i capi lunghi, oltre 100 per camicie e giacche.'},
     {t:'Margine verde oltre 3 cm, giallo sotto 3 cm, rosso in interferenza.'},

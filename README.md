@@ -8,18 +8,18 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
 
 - **Vista 3D interattiva** (three.js) della stanza con falda, travi e soffitto reali rilevati a misura.
 - **Anta e contenuto indipendenti**: ogni telaio PLATSA può avere o no l'anta (con il lato
-  cerniere), e separatamente si riempie con una pila di cassetti e vani in qualsiasi ordine
-  (es. 4 cassetti da 20 più 2 vani da 20). I ripiani nascono dalle divisioni fra i vani, e ogni
-  vano si può definire sia per altezza sia scrivendo direttamente la **quota da terra** del suo
-  cielo, cioè dove va il ripiano: i vani sopra scorrono di conseguenza.
-- **Tre tipi di elemento** nella pila: cassetto, vano a giorno e vano con **bastone appendiabiti**
-  (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55). Per il bastone il tool
-  calcola l'altezza utile sotto e dice se ci stanno capi lunghi, camicie e giacche, o niente.
+  cerniere), e separatamente si riempie di pezzi.
+- **I pezzi si mettono a quota, non si impilano**: un ripiano è una mensola a una quota da terra,
+  un bastone è un tondino a una quota, un cassetto è una base più l'altezza del frontale. Si
+  scrive la quota e il pezzo va lì; i vani liberi sono quello che resta in mezzo e vengono
+  calcolati e quotati da soli. Sovrapposizioni e pezzi fuori dal telaio vengono segnalati.
+- **Bastone appendiabiti** (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55):
+  il tool misura l'altezza utile sotto, cioè fino al primo pezzo che trova, e dice se ci stanno
+  capi lunghi, camicie e giacche, o niente.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
   apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
-- **Regola dei telai con anta**: dentro un telaio con anta ci vanno solo vani e bastoni, non
-  cassetti. Mettendo l'anta a un telaio che li aveva, i cassetti diventano vani della stessa
-  altezza.
+- **Regola dei telai con anta**: dentro un telaio con anta ci vanno solo ripiani e bastoni, non
+  cassetti.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
 - **Apertura per singolo pezzo**: il cursore 0–90° sta sulla riga dell'anta, il tasto *Sfila* sulla
   riga di ogni cassetto, e nel 3D si tocca direttamente l'anta o il singolo cassetto. L'apertura è
