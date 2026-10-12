@@ -24,11 +24,23 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
   basta toccare un'anta o un cassetto per aprirlo. L'apertura è stato di vista, non viene salvata
   con la configurazione.
 - **Viste 2D e PDF**: il tasto *Salva PDF* produce un A4 orizzontale di quattro tavole — viste 3D
-  con il riepilogo dei quattro vani, prospetto e pianta in 1:20, una sezione per vano in 1:30,
+  con il riepilogo dei quattro blocchi, prospetto e pianta in 1:20, una sezione per blocco in 1:30,
   lista componenti e composizione quota per quota. Il tasto *Viste 2D* mostra le stesse tavole a
   schermo e permette di stamparle. Disegni vettoriali, immagini 3D catturate dalla scena.
 - La configurazione resta salvata nel browser (localStorage); le vecchie configurazioni vengono
   migrate automaticamente al nuovo formato.
+
+## I quattro blocchi
+
+Numerati dal fondo verso il lato aperto, nello stesso ordine in cui si leggono da sinistra nel
+prospetto e nella pianta.
+
+| | | |
+|---|---|---|
+| Blocco 1 | fondo | da 186 a 246 cm dal lato aperto |
+| Blocco 2 | centro | da 126 a 186 |
+| Blocco 3 | vicino alla colonna | da 66 a 126 |
+| Blocco 4 | colonna, zona alta | da 6 a 66, moduli impilabili 40/60/120/180 |
 
 ## Geometria rilevata
 

@@ -163,12 +163,14 @@ function ceilAt(x,y){
   for(const b of YB) if(y>=b&&y<=b+BW) return under(x);
   return ceilN(x);
 }
+// numerati dal fondo verso il lato aperto, come si leggono da sinistra nel prospetto
 const SLOTS=[
-  {id:'col', name:'Colonna', hint:'zona alta', y0:6, y1:66, column:true},
-  {id:'a', name:'Platsa A', hint:'vicino colonna', y0:66, y1:126},
-  {id:'b', name:'Platsa B', hint:'centro', y0:126, y1:186},
-  {id:'c', name:'Platsa C', hint:'fondo', y0:186, y1:246},
+  {id:'b1', short:'1', name:'Blocco 1', hint:'fondo',               y0:186, y1:246},
+  {id:'b2', short:'2', name:'Blocco 2', hint:'centro',              y0:126, y1:186},
+  {id:'b3', short:'3', name:'Blocco 3', hint:'vicino alla colonna', y0:66,  y1:126},
+  {id:'b4', short:'4', name:'Blocco 4', hint:'colonna, zona alta',  y0:6,   y1:66, column:true},
 ];
+const OLDID={b1:'c', b2:'b', b3:'a', b4:'col'};   // id delle versioni precedenti
 const H_CASS=[20,30,40];                                                  // altezze cassetto
 const H_VANO=[10,15,20,25,30,35,40,50,60,70,80,90,100,110,120,140,160,180]; // altezze vano
 const RAIL_Z=4;      // asse del bastone appendiabiti sotto il cielo del vano
@@ -177,16 +179,16 @@ const RAIL_HOOK=1.2; // raggio del bastone: quello che la gruccia mangia in più
 // ================= STATO =================
 const KEY='platsa_cfg_v3', KEYS_OLD=['platsa_cfg_v2','platsa_cfg_v1'];
 const DEFAULT={
-  col:[{h:180,door:1,hinge:'R',el:[{t:'v',h:60},{t:'v',h:60}]},{h:40,door:1,hinge:'R',el:[]}],
-  a:[{h:120,door:0,hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
-  b:[{h:120,door:1,hinge:'R',el:[{t:'v',h:40},{t:'v',h:40}]}],
-  c:[{h:120,door:1,hinge:'L',el:[{t:'v',h:120,rail:1}]}],
+  b1:[{h:120,door:1,hinge:'L',el:[{t:'v',h:120,rail:1}]}],
+  b2:[{h:120,door:1,hinge:'R',el:[{t:'v',h:40},{t:'v',h:40}]}],
+  b3:[{h:120,door:0,hinge:'R',el:[{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'c',h:20},{t:'v',h:20},{t:'v',h:20}]}],
+  b4:[{h:180,door:1,hinge:'R',el:[{t:'v',h:60},{t:'v',h:60}]},{h:40,door:1,hinge:'R',el:[]}],
 };
 // v1 drawers:[20,30] · v2 type:'anta'|'comp' · v3 anta e contenuto indipendenti
 function migrate(o){
   const out={};
   for(const sl of SLOTS){
-    out[sl.id]=((o&&o[sl.id])||[]).map(m=>{
+    out[sl.id]=((o&&(o[sl.id]||o[OLDID[sl.id]]))||[]).map(m=>{
       const base={h:+m.h,hinge:m.hinge||'R'};
       const keep=e=>{const o={t:e.t==='c'?'c':'v',h:+e.h}; if(o.t==='v'&&e.rail) o.rail=1; return o;};
       if(m.door!==undefined) return {...base,door:m.door?1:0,el:(m.el||[]).map(keep)};
@@ -198,7 +200,7 @@ function migrate(o){
   }
   return out;
 }
-let S=null, cur='b', showSof=false, showFon=true, showDes=true;
+let S=null, cur='b1', showSof=false, showFon=true, showDes=true;
 function canOpen(m){ return !!m.door || topDrawer(m)!==null; }
 function openState(){ const o={}; SLOTS.forEach(sl=>o[sl.id]=S[sl.id].map(m=>m.open||0)); return o; }
 function setOpen(v){ SLOTS.forEach(sl=>S[sl.id].forEach((m,i)=>{ m.open = typeof v==='number' ? v : ((v[sl.id]||[])[i]||0); })); }
@@ -378,7 +380,7 @@ function cumEl(m,j){ let z=0; for(let k=0;k<j;k++) z+=m.el[k].h; return z; }
 function renderEditor(){
   const slot=SLOTS.find(s=>s.id===cur), a=analyze(slot);
   let html=`<h2>${slot.name} <span class="sub">· ${slot.hint}</span></h2>
-    <p class="sub">Da <span class="num">${slot.y0}</span> a <span class="num">${slot.y1}</span> cm dal lato aperto. ${slot.column?'Impila i moduli dal basso: 40, 60, 120 o 180.':'Platsa 60 × 55 × 120.'}</p>`;
+    <p class="sub">Da <span class="num">${slot.y0}</span> a <span class="num">${slot.y1}</span> cm dal lato aperto. ${slot.column?'Impila i moduli dal basso: 40, 60, 120 o 180.':'Telaio PLATSA 60 × 55 × 120.'}</p>`;
   html+=S[slot.id].map((m,i)=>modEditor(slot,m,i)).join('');
   if(slot.column) html+=`<div class="row" style="margin-bottom:10px"><button class="btn" data-act="madd">+ Aggiungi modulo sopra</button><span class="vano">Altezza totale <b>${fmt(a.total)} cm</b></span></div>`;
   html+=a.res.map(r=>`<div class="status ${r.lv}">${r.msg}</div>`).join('');
@@ -807,7 +809,7 @@ function drawPianta(g,bx,base,k){
   SLOTS.forEach(sl=>{
     g.line(sl.y0,W-DEPTH,sl.y0,W,{w:0.35});
     g.line(sl.y1,W-DEPTH,sl.y1,W,{w:0.35});
-    g.text(sl.y0+(sl.y1-sl.y0)/2,W-DEPTH/2-1.5,sl.name.replace('Platsa ',''),{fs:2.6,an:'middle',b:true});
+    g.text(sl.y0+(sl.y1-sl.y0)/2,W-DEPTH/2-1.5,sl.short,{fs:3.2,an:'middle',b:true});
     const seen={};
     stacks(sl).forEach(o=>{
       const m=o.m;
@@ -960,11 +962,11 @@ function pageTavole(g,n,tot){
 function pageSezioni(g,n,tot){
   frame(g,n,tot,'Sezioni verticali e verifica delle aperture','1:30');
   const xs=[16,85,154,223], k=1/3;
-  [...SLOTS].reverse().forEach((sl,i)=>drawSezione(g,sl,xs[i],124,k));
+  SLOTS.forEach((sl,i)=>drawSezione(g,sl,xs[i],124,k));
   g.setT(0,PAGE.h,1);
   g.text(13,76,'Verifiche automatiche',{fs:3,b:true});
   const xs2=[14,83,152,221];
-  [...SLOTS].reverse().forEach((sl,i)=>{
+  SLOTS.forEach((sl,i)=>{
     const a=analyze(sl), lines=[{t:sl.name+' · '+fmt(sl.y0)+'→'+fmt(sl.y1)+' cm',b:true,c:'#111',dot:a.worst}];
     a.res.forEach(r=>lines.push({t:'· '+r.msg,c:r.lv==='bad'?BAD:(r.lv==='warn'?'#8a6500':'#444')}));
     colText(g,xs2[i],70,lines,2.5,3.4,42);
