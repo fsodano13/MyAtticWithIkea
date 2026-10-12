@@ -581,7 +581,9 @@ function boxR(parent,x0,x1,y0,y1,z0,z1,color){
   return me;
 }
 let furn=null;
-const COLORS={box:0xc9d6e2,rail:0x8d98a3,carcass:0xdbe6f1,front:0xf7fbff,open:0x5d7690,handle:0x2f6ea8,door:0xf7fbff,bad:0xf28b82,warn:0xf5d07a,top:0xd2b98c,fill:0xe6e6e6,shelf:0xcfdbe8};
+const T_C=1.8;   // spessore dei pannelli del telaio
+const COLORS={box:0xc9d6e2,rail:0x6b7680,carcass:0xdbe6f1,front:0xf7fbff,open:0x5d7690,handle:0x2f6ea8,
+  door:0xf7fbff,bad:0xf28b82,warn:0xf5d07a,top:0xd2b98c,fill:0xe6e6e6,shelf:0xbfd0e0,back:0xa9bbcb};
 function build3D(){
   if(furn) scene.remove(furn);
   furn=new THREE.Group(); scene.add(furn);
@@ -594,7 +596,12 @@ function build3D(){
       const m=o.m, angR=(m.od||0)*Math.PI/180;
       const lvlD=(an.res.find(r=>r.k==='d'+i)||{}).lv, lvlC=(an.res.find(r=>r.k==='c'+i)||{}).lv;
       const mg=new THREE.Group(); mg.userData={sid:sl.id,mi:i}; furn.add(mg);
-      boxR(mg,XF,W,sl.y0,sl.y1,o.z0,o.z1,COLORS.carcass);
+      // il telaio è fatto di pannelli ed è vuoto dentro, se no ripiani e bastoni restano sepolti
+      boxR(mg,XF,W,sl.y0,sl.y0+T_C,o.z0,o.z1,COLORS.carcass);
+      boxR(mg,XF,W,sl.y1-T_C,sl.y1,o.z0,o.z1,COLORS.carcass);
+      boxR(mg,XF,W,sl.y0+T_C,sl.y1-T_C,o.z0,o.z0+T_C,COLORS.carcass);
+      boxR(mg,XF,W,sl.y0+T_C,sl.y1-T_C,o.z1-T_C,o.z1,COLORS.carcass);
+      boxR(mg,W-0.8,W,sl.y0+T_C,sl.y1-T_C,o.z0+T_C,o.z1-T_C,COLORS.back);
       // interno: c'è anche dietro l'anta, solo arretrato dello spessore del frontale
       const td=topDrawer(m);
       let z=o.z0;
@@ -609,17 +616,18 @@ function build3D(){
           if(ext>0.5) boxR(dg,XF-ext,XF,sl.y0+2,sl.y1-2,zb+1,zb+el.h-6,COLORS.box);
           boxR(dg,XF-T_FR-ext-1,XF-T_FR-ext,sl.y0+20,sl.y1-20,zb+el.h-7,zb+el.h-5,COLORS.handle);
         } else if(el.t==='r'){
-          boxR(mg,XF,W,sl.y0+0.8,sl.y1-0.8,o.z0+el.z,o.z0+el.z+T_SHELF,COLORS.shelf);
+          boxR(mg,XF,W-0.8,sl.y0+T_C,sl.y1-T_C,o.z0+el.z,o.z0+el.z+T_SHELF,COLORS.shelf);
         } else {
-          const len=sl.y1-sl.y0-4;
+          const len=sl.y1-sl.y0-2*T_C, zr=o.z0+el.z, xr=XF+DEPTH/2;
           const gg=new THREE.CylinderGeometry(RAIL_HOOK,RAIL_HOOK,len,10);
           const me=new THREE.Mesh(gg,mat(COLORS.rail));
-          me.position.copy(P(XF+DEPTH/2,(sl.y0+sl.y1)/2,o.z0+el.z));
+          me.position.copy(P(xr,(sl.y0+sl.y1)/2,zr));
           me.rotation.x=Math.PI/2; mg.add(me);
+          // gli attacchi ai fianchi, che fanno capire che è un bastone montato e non una riga
+          boxR(mg,xr-2.2,xr+2.2,sl.y0+T_C,sl.y0+T_C+1.2,zr-2.6,zr+2.6,COLORS.rail);
+          boxR(mg,xr-2.2,xr+2.2,sl.y1-T_C-1.2,sl.y1-T_C,zr-2.6,zr+2.6,COLORS.rail);
         }
       });
-      // i vani liberi, visibili solo se non c'è l'anta
-      if(!m.door) gaps(m).forEach(gp=>boxR(mg,XF-0.2,XF,sl.y0+1.5,sl.y1-1.5,o.z0+gp[0]+0.6,o.z0+gp[1]-0.6,COLORS.open));
       if(m.door){
         const h=hingeY(sl,m), sg=(m.hinge==='R')?1:-1;
         const piv=new THREE.Group(); piv.userData={sid:sl.id,mi:i,door:1}; piv.position.copy(P(XF,h,o.z0)); mg.add(piv);
