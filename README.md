@@ -15,10 +15,10 @@ Pagina online: **https://fsodano13.github.io/MyAtticWithIkea/**
   (HJÄLPA regolabile 60–100 × 55, l'accessorio PLATSA per i telai da 55). Per il bastone il tool
   calcola l'altezza utile sotto e dice se ci stanno capi lunghi, camicie e giacche, o niente.
 - **Controllo collisioni**: ante che sbattono contro falda e travi (con l'angolo massimo di
-  apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto, e cassetti
-  interni bloccati da un'anta che non arriva a 90°.
-- **Cassetti interni**: dietro un'anta il cassetto va senza frontale (HJÄLPA 60 × 55 nudo), e la
-  distinta lo tiene distinto dal cassetto con frontale dei vani a vista.
+  apertura), cassetti aperti, altezza totale contro il punto più basso del soffitto.
+- **Regola dei telai con anta**: dentro un telaio con anta ci vanno solo vani e bastoni, non
+  cassetti. Mettendo l'anta a un telaio che li aveva, i cassetti diventano vani della stessa
+  altezza.
 - **Visibilità selettiva** di soffitto, parete di fondo e parete destra, per guardare dentro la nicchia.
 - **Apertura per singolo pezzo**: il cursore 0–90° sta sulla riga dell'anta, il tasto *Sfila* sulla
   riga di ogni cassetto, e nel 3D si tocca direttamente l'anta o il singolo cassetto. L'apertura è
